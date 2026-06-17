@@ -3,3 +3,5 @@ res_archive/*
 .conda/*
 *.pyc
 terrain/load_file_test.ipynb
+rl/viz/*
+__pycache__/

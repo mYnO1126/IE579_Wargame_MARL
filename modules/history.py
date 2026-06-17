@@ -133,8 +133,9 @@ class History:  # Store history of troop actions and troop status
         df.to_csv(filename, index=False)
         print("Status data saved to status_data.csv")
 
-    def draw_troop_positions(self, Map, troop_list, current_time, save_dir="frames", 
-                           show_attack_lines=True, show_ranges=True, show_paths=False):
+    def draw_troop_positions(self, Map, troop_list, current_time, save_dir="frames",
+                           show_attack_lines=True, show_ranges=True, show_paths=False,
+                           show_move_arrows=False):
         # plt.figure(figsize=(16, 8))
 
         # --- 입력 데이터 ---
@@ -183,6 +184,10 @@ class History:  # Store history of troop actions and troop status
 
         # 🟢 4. 부대 위치 그리기 (맨 위에 표시)
         self._draw_troop_markers(ax, troop_list)
+
+        #!CLAUDE 실제 이동 방향(velocity) 화살표. 기본 OFF(기존 프레임 불변), RL 렌더에서만 ON.
+        if show_move_arrows:
+            self._draw_move_arrows(ax, troop_list)
 
         #!CLAUDE 버그 수정: TroopList는 iterable이 아님 → .troops 를 순회해야 함 (--save_frames 사용 시 TypeError로 즉시 크래시 방지).
         # for troop in troop_list:
@@ -237,8 +242,14 @@ class History:  # Store history of troop actions and troop status
 
         if show_paths:
             legend_elements.append(
-                plt.Line2D([0], [0], color='cyan', linewidth=1, 
+                plt.Line2D([0], [0], color='cyan', linewidth=1,
                           linestyle='--', alpha=0.6, label='Path')
+            )
+        #!CLAUDE 이동 방향 화살표 범례
+        if show_move_arrows:
+            legend_elements.append(
+                plt.Line2D([0], [0], color='black', marker='>', linestyle='-',
+                          linewidth=1, label='Move dir')
             )
 
         ax.legend(handles=legend_elements, loc='lower right', bbox_to_anchor=(1.2, 0.0))
@@ -398,6 +409,22 @@ class History:  # Store history of troop actions and troop status
                       c=color, marker=marker,
                       s=size * size_scale, alpha=alpha,
                       edgecolors='black', linewidths=0.5)
+
+    #!CLAUDE 실제 이동 방향 화살표(velocity 기반). 고정 길이로 그려 속도와 무관하게 방향만 표시.
+    def _draw_move_arrows(self, ax, troop_list: TroopList):
+        """각 유닛이 실제로 움직이는 방향(velocity)을 검은 화살표로 표시."""
+        for troop in troop_list.troops:
+            if not troop.alive or not getattr(troop, "active", False):
+                continue
+            vx, vy = troop.velocity.x, troop.velocity.y
+            speed = float(np.hypot(vx, vy))
+            if speed < 1e-6:
+                continue   # 정지 중인 유닛은 화살표 없음
+            ux, uy = vx / speed, vy / speed
+            L = 10.0  # 고정 화살 길이(px)
+            ax.arrow(troop.coord.x, troop.coord.y, ux * L, uy * L,
+                     head_width=4.0, head_length=4.5, fc="black", ec="black",
+                     alpha=0.95, linewidth=1.6, zorder=6, length_includes_head=True)
 
     def create_tactical_overview(self, Map, troop_list: TroopList, current_time, save_dir="frames"):
         """🟢 전술 개요 시각화 (별도 파일)"""

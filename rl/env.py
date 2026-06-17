@@ -69,6 +69,11 @@ class WargameParallelEnv:
 
         self.possible_agents = []
         self.agents = []
+        self._history = None   # 렌더링용(지연 생성). 학습 루프에서는 사용 안 함.
+        # 프레임 녹화(옵션). 기본 OFF → step()에서 매분 render 호출 안 함(학습 속도 영향 0).
+        self._rec_dir = None
+        self._rec_mode = "board"
+        self._rec_every = 1    # N 시뮬분마다 1프레임
 
     # --- PettingZoo 호환 space 접근자 ---
     def observation_space(self, agent):
@@ -76,6 +81,33 @@ class WargameParallelEnv:
 
     def action_space(self, agent):
         return self._act_space
+
+    # --- 렌더링(옵션) ---
+    # step()에는 렌더 코드가 전혀 없다. 학습은 이 메서드를 호출하지 않으므로 속도 영향 0.
+    # 시각화가 필요할 때만 visualize_episode.py 등이 reset/step 사이에 직접 호출한다.
+    def render(self, save_dir, mode="board"):
+        """현재 상태를 PNG 프레임으로 저장. 기존 History 렌더러를 크롭 맵에 재사용.
+        mode="board": 전술 상황판(유닛/사거리/교전선/RED goal선) — 유닛별 행동 확인에 유리.
+        mode="tactical": 상황도 + 교전 히트맵 2패널."""
+        os.makedirs(save_dir, exist_ok=True)
+        if self._history is None:
+            from modules.history import History
+            self._history = History(time=0.0)
+        with _silence():
+            if mode == "tactical":
+                self._history.create_tactical_overview(
+                    self.cmap, self.troop_list, self.t, save_dir=save_dir)
+            else:
+                self._history.draw_troop_positions(
+                    self.cmap, self.troop_list, self.t, save_dir=save_dir,
+                    show_paths=True, show_move_arrows=True)
+
+    def set_recording(self, save_dir, mode="board", every=1):
+        """step() 내부에서 매 `every` 시뮬분마다 자동으로 프레임을 저장하도록 설정.
+        visualizer 전용. save_dir=None 으로 끄면 step()에 렌더 비용이 전혀 없다."""
+        self._rec_dir = save_dir
+        self._rec_mode = mode
+        self._rec_every = max(1, int(every))
 
     # --- reset ---
     def reset(self, seed=None):
@@ -144,6 +176,9 @@ class WargameParallelEnv:
         if 0 <= xi < self.cmap.width and 0 <= yi < self.cmap.height and self.cmap.is_passable(xi, yi):
             tr.coord.x, tr.coord.y = nx, ny
             tr.coord.z = float(self.cmap.dem_arr[yi, xi])
+            tr.update_velocity(Velocity(ux * move_px, uy * move_px, 0))  # 시각화용 이동 방향
+        else:
+            tr.update_velocity(Velocity(0, 0, 0))  # 장애물에 막힘 → 정지
 
     # --- step ---
     def step(self, actions):
@@ -185,6 +220,9 @@ class WargameParallelEnv:
                         # enemy_list=[] → 명중/살상 후 규칙기반 재타게팅 억제(정책이 다음 결정에서 재설정)
                         tr.fire(self.t, [], self.troop_list, self.evlog)
                 self.troop_list.remove_dead_troops()
+                # 옵션 녹화: 1분 단위 프레임(기본 OFF — 학습 시 호출 안 됨)
+                if self._rec_dir is not None and int(self.t) % self._rec_every == 0:
+                    self.render(self._rec_dir, self._rec_mode)
 
         # 3) 보상 계산
         rewards = {a: 0.0 for a in acting}
