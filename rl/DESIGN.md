@@ -124,7 +124,8 @@ rl/
 - **상대(opponent)**: ① 한 팀 학습 vs **frozen 스크립트 상대**(기존 `filter_priority` +
   pathfinding)로 시작 → ② **self-play**(과거 정책 풀과 대전).
 - **커리큘럼**: 1v1 → 3v3 → 10v10 …, 맵·유닛 수·episode 길이 점증.
-- 도구: **RLlib**(다수 에이전트·파라미터공유·self-play 스케일) 또는 투명성 위해 CleanRL-MAPPO.
+- 도구: **PyTorch로 직접 MAPPO 구현**(사용자 선택, torch 2.11 + CUDA). 환경은 외부 의존성
+  없이 PettingZoo Parallel API 호환 인터페이스로 작성(필요 시 나중에 pettingzoo 래핑).
 - 성능 목표: env 1 step ≪ 1ms(벡터화/병렬 env). 학습 중 **A*/flow-field 미사용**(정책이 직접
   방향 결정) → 기존 pathfinding 병목이 사라짐. pathfinding은 스크립트 상대에만 사용.
 

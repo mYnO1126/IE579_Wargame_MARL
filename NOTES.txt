@@ -130,7 +130,16 @@ IE579_Wargame_MARL (구 IE571_2025) War Game — 작업 노트 / 참고사항 (C
    - 설계 문서: rl/DESIGN.md (관측/행동/보상 스펙, MAPPO/CTDE, 커리큘럼, 기존코드 통합지점).
    - 접근: 같은 시뮬 동역학 유지 + 작은 랜덤크롭 맵 + 임의 유닛 스폰. RL이 유닛별
      이동/타깃/교전을 결정하고, 사격물리·LOS·지형비용은 환경이 처리.
-   - 다음 단계(milestone 1): rl/ 에 PettingZoo Parallel 환경 골격 작성(스폰·관측·스텝·보상).
-   - 미정: goal point 출처(1차 랜덤 고정 제안), 지형패치 CNN vs MLP, 보상 계수,
-     "1팀 학습 vs 스크립트" → self-play 전환 시점.
+   - [완료] milestone 1: PettingZoo Parallel API 호환 환경 골격(외부 의존성 없음, PyTorch 사용).
+       · rl/spawn.py  — 실제 맵 랜덤 크롭(120px) + 유닛 랜덤 스폰(유효 셀), 팀별 goal.
+       · rl/obs.py    — obs 476차원: self9 / goal4 / 적 top5×10 / 아군 top5×10 / 지형패치 11×11×3.
+       · rl/env.py    — WargameParallelEnv. 행동=MultiDiscrete[이동9, 타깃6, 교전2], 결정주기 5분.
+                        보상 = 가한피해+ / 받은피해·사망− / goal접근+ / 종료 시 팀 승패±.
+                        기존 Troop.fire(Ph/Pk)·update_observation·이동물리 재사용, 학습 중 A*/flow 미사용.
+       · rl/random_rollout.py — 실행: conda run -n wargame python -m rl.random_rollout
+       · 검증: 다수 seed에서 정상 종료, 전투(사격·살상·보상) 동작 확인.
+       · 주의: 기존 시뮬 print문이 많아 env 내부에서 stdout 억제(_silence)로 감쌈(추후 디버그 플래그 정리 권장).
+               TroopList.__init__가 next_fire_time=inf로 만들어 reset에서 초기화함.
+   - 다음: milestone 2(고속화·벡터화로 step time↓), milestone 3(PyTorch MAPPO: 1팀 vs 스크립트→self-play).
+   - 미정: goal point 출처(현재 팀당 1개 랜덤 고정), 지형패치 CNN vs MLP, 보상 계수, self-play 전환 시점.
 ================================================================================
