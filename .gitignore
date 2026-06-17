@@ -1,0 +1,5 @@
+res/*
+res_archive/*
+.conda/*
+*.pyc
+terrain/load_file_test.ipynb
