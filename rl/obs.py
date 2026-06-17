@@ -27,6 +27,10 @@ TERR_FEATS = 8 * 3     # 24
 # self(11) + goal(5) + enemies(K*10) + allies(K*10) + terrain(8dir*3=24)
 OBS_DIM = 11 + 5 + ENEMY_K * 10 + ALLY_K * 10 + TERR_FEATS
 
+#!CLAUDE MAPPO 중앙 critic용 전역 상태(팀 단위, 한 step에 하나). 팀 승패를 잘 예측하도록 압축.
+#  [시간, 학습팀 생존율, 상대 생존율, 학습팀 중심 x·y, 상대 중심 x·y, 학습팀 분산, 상대 분산]
+GLOBAL_DIM = 9
+
 
 def unit_cat(t):
     """병종 5범주: 0 전차 / 1 장갑(APC) / 2 대전차 / 3 간접화력 / 4 보병·기타."""
@@ -150,3 +154,29 @@ def build_observation(troop, troop_list, cm):
     parts.append(terr)
 
     return np.concatenate(parts).astype(np.float32), enemy_order
+
+
+def build_global_state(env, team):
+    """MAPPO 중앙 critic용 전역 상태(team 관점). 한 step에 하나, 모든 학습 에이전트가 공유."""
+    W, H = env.cmap.width, env.cmap.height
+    opp = "blue" if team == "red" else "red"
+    learn_troops = env.troop_list.blue_troops if team == "blue" else env.troop_list.red_troops
+    opp_troops = env.troop_list.blue_troops if opp == "blue" else env.troop_list.red_troops
+
+    def centroid_spread(troops):
+        pts = [(t.coord.x / W, t.coord.y / H) for t in troops if t.alive]
+        if not pts:
+            return 0.0, 0.0, 0.0
+        arr = np.asarray(pts, dtype=np.float32)
+        cx, cy = float(arr[:, 0].mean()), float(arr[:, 1].mean())
+        spread = float(np.sqrt(((arr[:, 0] - cx) ** 2 + (arr[:, 1] - cy) ** 2).mean()))
+        return cx, cy, spread
+
+    lc = max(1, env._init_count[team]); oc = max(1, env._init_count[opp])
+    la = sum(1 for t in learn_troops if t.alive)
+    oa = sum(1 for t in opp_troops if t.alive)
+    lcx, lcy, lsp = centroid_spread(learn_troops)
+    ocx, ocy, osp = centroid_spread(opp_troops)
+    tmax = max(1, env.max_decisions * env.decision_interval)
+    return np.array([min(env.t / tmax, 1.0), la / lc, oa / oc,
+                     lcx, lcy, ocx, ocy, lsp, osp], dtype=np.float32)

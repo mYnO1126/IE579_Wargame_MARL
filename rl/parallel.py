@@ -13,7 +13,7 @@ import torch
 _W = {}
 
 
-def _init_worker(team, obs_dim, act_nvec, base_seed, idx_counter):
+def _init_worker(team, obs_dim, act_nvec, global_dim, base_seed, idx_counter):
     import torch
     torch.set_num_threads(1)   # 프로세스마다 1스레드 → 오버서브스크립션 방지
     from rl.env import WargameParallelEnv
@@ -23,7 +23,7 @@ def _init_worker(team, obs_dim, act_nvec, base_seed, idx_counter):
     with idx_counter.get_lock():
         idx_counter.value += 1
     _W["env"] = WargameParallelEnv(seed=base_seed + 1000 * (wid + 1))
-    _W["policy"] = ActorCritic(obs_dim, act_nvec)
+    _W["policy"] = ActorCritic(obs_dim, act_nvec, global_dim)
     _W["policy"].eval()
     _W["team"] = team
 
@@ -39,13 +39,13 @@ def _collect_task(args):
 class ParallelCollector:
     """worker N개로 롤아웃을 병렬 수집."""
 
-    def __init__(self, n_workers, team, obs_dim, act_nvec, seed=0):
+    def __init__(self, n_workers, team, obs_dim, act_nvec, global_dim, seed=0):
         self.n = n_workers
         ctx = mp.get_context("spawn")
         counter = ctx.Value("i", 0)
         self.pool = ctx.Pool(
             n_workers, initializer=_init_worker,
-            initargs=(team, obs_dim, act_nvec, seed, counter),
+            initargs=(team, obs_dim, act_nvec, global_dim, seed, counter),
         )
 
     def collect(self, policy, roll_steps):
@@ -55,7 +55,7 @@ class ParallelCollector:
         per = max(1, roll_steps // self.n)
         results = self.pool.map(_collect_task, [(sb, per)] * self.n)
 
-        B = {"obs": [], "act": [], "logp": [], "adv": [], "ret": []}
+        B = {"obs": [], "glob": [], "act": [], "logp": [], "adv": [], "ret": []}
         ret_sum, win_sum, games, steps = 0.0, 0.0, 0, 0
         for b, st in results:
             for k in B:

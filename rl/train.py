@@ -28,6 +28,7 @@ from rl.rollout import collect
 
 def ppo_update(policy, opt, B, device, epochs=4, mb=256, clip=0.2, ent_c=0.01, vf_c=0.5):
     obs = torch.as_tensor(np.array(B["obs"]), dtype=torch.float32, device=device)
+    glob = torch.as_tensor(np.array(B["glob"]), dtype=torch.float32, device=device)
     act = torch.as_tensor(np.array(B["act"]), dtype=torch.int64, device=device)
     logp_old = torch.as_tensor(np.array(B["logp"]), dtype=torch.float32, device=device)
     adv = torch.as_tensor(np.array(B["adv"]), dtype=torch.float32, device=device)
@@ -39,7 +40,7 @@ def ppo_update(policy, opt, B, device, epochs=4, mb=256, clip=0.2, ent_c=0.01, v
         idx = torch.randperm(N, device=device)
         for s in range(0, N, mb):
             b = idx[s:s + mb]
-            logp, entropy, val = policy.evaluate(obs[b], act[b])
+            logp, entropy, val = policy.evaluate(obs[b], glob[b], act[b])
             ratio = torch.exp(logp - logp_old[b])
             s1 = ratio * adv[b]
             s2 = torch.clamp(ratio, 1 - clip, 1 + clip) * adv[b]
@@ -69,14 +70,15 @@ def main():
     torch.manual_seed(args.seed); np.random.seed(args.seed)
 
     env = WargameParallelEnv(seed=args.seed)   # action_space nvec용(+단일 워커면 롤아웃에도 사용)
-    policy = ActorCritic(obsmod.OBS_DIM, env.action_space("x").nvec).to(device)
+    nvec = list(env.action_space("x").nvec)
+    policy = ActorCritic(obsmod.OBS_DIM, nvec, obsmod.GLOBAL_DIM).to(device)
     opt = torch.optim.Adam(policy.parameters(), lr=args.lr)
 
     collector = None
     if args.workers > 1:
         from rl.parallel import ParallelCollector
         collector = ParallelCollector(args.workers, args.team, obsmod.OBS_DIM,
-                                      list(env.action_space("x").nvec), seed=args.seed)
+                                      nvec, obsmod.GLOBAL_DIM, seed=args.seed)
 
     print(f"device={device}  team={args.team}  workers={args.workers}  obs_dim={obsmod.OBS_DIM}  "
           f"params={sum(p.numel() for p in policy.parameters())}")
@@ -97,7 +99,8 @@ def main():
     save = args.save or os.path.join(_ROOT, "rl", "policies", f"ippo_{args.team}.pt")
     os.makedirs(os.path.dirname(save), exist_ok=True)
     torch.save({"model": policy.state_dict(), "obs_dim": obsmod.OBS_DIM,
-                "act_nvec": policy.act_nvec, "team": args.team}, save)
+                "act_nvec": policy.act_nvec, "global_dim": obsmod.GLOBAL_DIM,
+                "team": args.team}, save)
     print(f"saved policy -> {save}")
     if collector is not None:
         collector.close()

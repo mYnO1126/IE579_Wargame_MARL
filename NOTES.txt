@@ -147,7 +147,10 @@ IE579_Wargame_MARL (구 IE571_2025) War Game — 작업 노트 / 참고사항 (C
    - [진행중] milestone 3 v1: IPPO(파라미터 공유) — rl/policy.py(MLP Actor-Critic, MultiDiscrete),
        rl/rollout.py(에피소드 수집+GAE, 한 팀 정책 vs 상대 스크립트), rl/train.py(PPO clip 업데이트).
        실행 conda run -n wargame python -m rl.train. 동작 확인(value loss 감소·체크포인트 저장).
-       중앙 critic(MAPPO/CTDE)은 다음 업그레이드.
+   - [완료] MAPPO 중앙 critic(CTDE): rl/policy.py actor(로컬)/critic(로컬+전역9) 분리,
+       rl/obs.build_global_state(시간·생존율·중심·분산). 단, 이 setup(밀집 per-agent 보상)에선
+       IPPO 대비 개선 미미([G]1). 보상이 희소/팀단위거나 self-play일 때 유효할 것으로 봄.
+   - 학습 결과(scripted 상대): BLUE ~95% win(유리), RED ~17~20% plateau(불리·천장).
    - [완료] 병렬 env: rl/parallel.py — 멀티프로세스 롤아웃 수집기(worker N개, --workers N).
        단일 ~1000 → 8워커 ~7500 steps/s(약 7배, 32코어 머신). CPU 바운드라 멀티프로세스로만 진짜 병렬.
    - 다음: M3 본격 학습/튜닝 → MAPPO(중앙 critic) → 커리큘럼 → self-play → 풀시뮬 베이스라인 비교(§10).
@@ -172,10 +175,14 @@ IE579_Wargame_MARL (구 IE571_2025) War Game — 작업 노트 / 참고사항 (C
 [G] 학습/진행 중 관찰된 문제점 (issues log)
 --------------------------------------------------------------------------------
 
-1) IPPO value loss가 큼(70~135) — 정책이 잘 학습된 BLUE에서도 높음.
-   - 원인: 각 에이전트가 *로컬 관측*만으로 *팀 전체 승패(±1 공유)* 를 예측 → 분산 큰 credit-assignment.
-   - 영향: RED 학습이 win ~20%에서 plateau, 불안정.
-   - 대응(예정): MAPPO 중앙 critic(전역 state로 팀 가치 추정) → advantage 분산↓.
+1) [정정] "value loss가 크다"는 진단은 일부 오해였음.
+   - vloss 로그값은 per-iteration **합**(미니배치×에폭 ~64회 합산) → per-sample MSE는 ~1(가치오차~1,
+     리턴 크기 ~1–3 대비 보통 수준). credit-assignment가 주범 아님.
+   - MAPPO 중앙 critic을 실제로 구현·실험(rl/policy.py actor/critic 분리 + rl/obs.build_global_state)했으나,
+     **RED 기준 IPPO 대비 개선 거의 없음**(win ~17% vs ~20%, vloss 동급).
+   - 재진단: RED plateau의 원인은 (a) 매치업 천장(BLUE 버프) + (b) 전투 난수에서 오는 환원 불가능한
+     per-agent 보상 분산. 중앙 critic으로는 안 줄어듦. (MAPPO는 보상이 희소/팀단위거나 self-play에서 더 유효.)
+   - 향후 RED 향상 레버: 보상 재균형/정규화, 커리큘럼(난이도 점증), 탐험(entropy)↑ 등.
 
 2) 매치업 비대칭: BLUE 버프(사거리×1.2/관측×1.2/피격×0.8)로 학습 시 BLUE ~95% vs RED ~20%.
    - 시나리오상 의도된 비대칭이지만, RED 학습 신호가 약함. 대응: 보상 재균형 또는 커리큘럼 검토.

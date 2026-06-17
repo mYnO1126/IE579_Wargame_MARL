@@ -170,6 +170,10 @@ rl/
 이 프로젝트의 최종 산출물은 **"MARL 정책 vs 기존 규칙기반 행동"의 정량 비교**다. 설계 전반이
 이 비교를 깨끗하게 할 수 있도록 맞춰져야 한다.
 
+- **성공 기준 = 절대 승률이 아니라 "rule-based 대비 개선"**(2026-06-18 사용자). RED는 승률이 낮아도
+  같은 상대에 대해 rule-based RED보다 나으면 성공. **BLUE(수비)의 승률/생존이 rule-based BLUE 대비
+  개선되는지가 오히려 더 중요**할 수 있음. → RED 절대 승률에 매달리지 말 것.
+
 - **규칙기반 경로를 절대 훼손하지 않는다.** 기존 결정 로직(`assign_targets`/`filter_priority`,
   `update_troop_location_improved`/`TacticalManager`)은 그대로 보존(코드 삭제 금지 원칙).
   `rl/`은 `modules/`를 라이브러리로 재사용하는 **별도 경로**이지 기존 코드를 덮어쓰지 않는다.
@@ -192,4 +196,5 @@ rl/
 - 보상 계수·정규화 스케일.
 - ~~관측에 절대위치 포함 여부~~ → **결정됨: 포함**(self 에 x/W, y/H, OBS_DIM 477→479).
 - 탄약/보급(현재 시뮬에서 비활성) 학습 범위 포함 여부.
-- 중앙 critic의 global state 표현(전체 유닛 요약 방식).
+- ~~중앙 critic의 global state 표현~~ → **구현됨**: 9차원 팀 요약(시간·양팀 생존율·중심 x·y·분산),
+  `obs.build_global_state`. critic 입력 = 로컬 obs ⊕ 전역(9). (단, 밀집 보상 setup에선 효과 미미 — NOTES[G]1)

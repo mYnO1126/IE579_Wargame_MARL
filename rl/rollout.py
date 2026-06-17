@@ -54,26 +54,31 @@ def gae(rew, val, last_val, gamma=0.99, lam=0.95):
 
 
 def collect(env, policy, team, roll_steps, device="cpu"):
-    """roll_steps(학습팀 agent-step) 이상 모일 때까지 에피소드 수집. 반환: (batch, stats)."""
-    B = {"obs": [], "act": [], "logp": [], "adv": [], "ret": []}
+    """roll_steps(학습팀 agent-step) 이상 모일 때까지 에피소드 수집. 반환: (batch, stats).
+    MAPPO: 매 step 전역 상태 g를 구해 중앙 critic 가치를 계산·저장(actor는 로컬 관측만)."""
+    from rl.obs import build_global_state
+    B = {"obs": [], "glob": [], "act": [], "logp": [], "adv": [], "ret": []}
     ep_returns, wins, games, steps = [], 0, 0, 0
     while steps < roll_steps:
         obs, _ = env.reset()
         cur = obs
         traj, last_obs = {}, {}
         while env.agents:
+            g = build_global_state(env, team)           # 팀 전역 상태(한 step에 하나)
             learn = [a for a in env.agents if env.troops_by_id[a].team == team]
             opp = [a for a in env.agents if env.troops_by_id[a].team != team]
             actions = {}
             if learn:
                 ob = torch.as_tensor(np.stack([cur[a] for a in learn]), dtype=torch.float32, device=device)
-                acts, logp, val = policy.act(ob)
+                gb = torch.as_tensor(np.tile(g, (len(learn), 1)), dtype=torch.float32, device=device)
+                acts, logp = policy.act(ob)
+                vals = policy.get_value(ob, gb)
                 acts_np = acts.cpu().numpy()
                 for i, a in enumerate(learn):
                     actions[a] = acts_np[i]
-                    d = traj.setdefault(a, {"obs": [], "act": [], "logp": [], "val": [], "rew": [], "term": False})
-                    d["obs"].append(cur[a]); d["act"].append(acts_np[i])
-                    d["logp"].append(float(logp[i])); d["val"].append(float(val[i]))
+                    d = traj.setdefault(a, {"obs": [], "glob": [], "act": [], "logp": [], "val": [], "rew": [], "term": False})
+                    d["obs"].append(cur[a]); d["glob"].append(g); d["act"].append(acts_np[i])
+                    d["logp"].append(float(logp[i])); d["val"].append(float(vals[i]))
             for a in opp:
                 actions[a] = scripted_action(env, a)
             nobs, rews, terms, truncs, _ = env.step(actions)
@@ -84,6 +89,7 @@ def collect(env, policy, team, roll_steps, device="cpu"):
                     last_obs[a] = nobs[a]
             cur = nobs
 
+        g_last = build_global_state(env, team)          # bootstrap용 종료 시점 전역 상태
         blue = any(t.alive for t in env.troop_list.blue_troops)
         red = any(t.alive for t in env.troop_list.red_troops)
         won = (team == "blue" and not red) or (team == "red" and not blue)
@@ -93,11 +99,11 @@ def collect(env, policy, team, roll_steps, device="cpu"):
             if d["term"] or a not in last_obs:
                 last_val = 0.0
             else:
-                with torch.no_grad():
-                    lo = torch.as_tensor(last_obs[a], dtype=torch.float32, device=device)
-                    last_val = float(policy.critic(policy.trunk(lo)).squeeze(-1))
+                lo = torch.as_tensor(last_obs[a], dtype=torch.float32, device=device).unsqueeze(0)
+                gl = torch.as_tensor(g_last, dtype=torch.float32, device=device).unsqueeze(0)
+                last_val = float(policy.get_value(lo, gl)[0])
             adv, ret = gae(d["rew"], d["val"], last_val)
-            B["obs"].extend(d["obs"]); B["act"].extend(d["act"])
+            B["obs"].extend(d["obs"]); B["glob"].extend(d["glob"]); B["act"].extend(d["act"])
             B["logp"].extend(d["logp"]); B["adv"].extend(adv); B["ret"].extend(ret)
             ep_returns.append(float(np.sum(d["rew"])))
             steps += len(d["rew"])
