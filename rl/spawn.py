@@ -71,9 +71,10 @@ DEFAULT_COMP = {
 
 
 def spawn_episode(full, rng, size=120, comp=None):
-    """랜덤 크롭 + 양 팀 유닛 스폰 + 팀별 goal 지정.
-    반환: (cmap, troops, goals)  goals = {"blue": Coord, "red": Coord}
-    - blue 는 좌측, red 는 우측 영역에 스폰하고 서로의 진영 쪽을 goal 로 받음.
+    """랜덤 크롭 + 양 팀 유닛 스폰. goal 은 기존 시나리오와 동일하게 troop.fixed_dest 로 부여한다:
+    공격하는 RED 만 goal(= BLUE 진영 쪽 통행가능 셀)을 갖고, 방어하는 BLUE 는 goal 없음(None).
+    반환: (cmap, troops)
+    - blue 는 좌측, red 는 우측 영역에 스폰.
     """
     comp = comp or DEFAULT_COMP
     # 통행 가능 비율이 너무 낮은(호수 등) 크롭은 피한다
@@ -85,6 +86,8 @@ def spawn_episode(full, rng, size=120, comp=None):
             break
 
     troops = []
+    blue_region = (size // 12, size // 3)            # 좌측 = BLUE 진영(방어)
+    red_region = (size * 2 // 3, size * 11 // 12)    # 우측 = RED 진영(공격)
 
     def spawn_team(team, x_lo, x_hi):
         for name in comp[team]:
@@ -96,16 +99,14 @@ def spawn_episode(full, rng, size=120, comp=None):
             t = Troop(name, Coord(x, y, z), affiliation=f"{team}_force", phase="RL")
             t.active = True
             t.can_move = True
+            # RED(공격)만 goal 부여 = BLUE 진영 쪽 통행가능 셀. BLUE(방어)는 fixed_dest=None 유지.
+            if team == "red":
+                g = _random_passable(cm, rng, blue_region[0], blue_region[1],
+                                     size // 4, size * 3 // 4)
+                if g is not None:
+                    t.fixed_dest = Coord(g[0], g[1], float(cm.dem_arr[g[1], g[0]]))
             troops.append(t)
 
-    spawn_team("blue", size // 12, size // 3)          # 좌측
-    spawn_team("red", size * 2 // 3, size * 11 // 12)  # 우측
-
-    # 팀 goal: 상대 진영 쪽 통행 가능 셀
-    bg = _random_passable(cm, rng, size * 2 // 3, size * 11 // 12, size // 4, size * 3 // 4)
-    rg = _random_passable(cm, rng, size // 12, size // 3, size // 4, size * 3 // 4)
-    goals = {
-        "blue": Coord(*(bg or (size - 1, size // 2)), 0.0),
-        "red": Coord(*(rg or (0, size // 2)), 0.0),
-    }
-    return cm, troops, goals
+    spawn_team("blue", *blue_region)
+    spawn_team("red", *red_region)
+    return cm, troops

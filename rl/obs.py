@@ -20,8 +20,8 @@ ALLY_K = 5
 PATCH = 11           # 자기 중심 지형 패치 한 변(픽셀)
 _HALF = PATCH // 2
 
-# self(9) + goal(4) + enemies(K*10) + allies(K*10) + terrain(PATCH*PATCH*3)
-OBS_DIM = 9 + 4 + ENEMY_K * 10 + ALLY_K * 10 + PATCH * PATCH * 3
+# self(9) + goal(5) + enemies(K*10) + allies(K*10) + terrain(PATCH*PATCH*3)
+OBS_DIM = 9 + 5 + ENEMY_K * 10 + ALLY_K * 10 + PATCH * PATCH * 3
 
 
 def unit_cat(t):
@@ -50,8 +50,9 @@ def _topk_by_distance(troop, others, k):
     return alive[:k]
 
 
-def build_observation(troop, troop_list, cm, goal):
-    """troop 한 기의 관측 벡터와 enemy_order 를 만든다."""
+def build_observation(troop, troop_list, cm):
+    """troop 한 기의 관측 벡터와 enemy_order 를 만든다.
+    goal 은 기존 시나리오와 동일하게 troop.fixed_dest 를 사용한다(RED만 보유, BLUE는 None)."""
     W, H = cm.width, cm.height
     dmax = math.hypot(W, H)
 
@@ -74,14 +75,19 @@ def build_observation(troop, troop_list, cm, goal):
     self_block[8] = 1.0 if (enemy_order and troop.get_distance(enemy_order[0]) <= troop.range_km) else 0.0
     parts.append(self_block)
 
-    # --- goal (4): 상대 벡터/거리(정규화) + 도달 flag ---
-    gdx = (goal.x - troop.coord.x)
-    gdy = (goal.y - troop.coord.y)
-    gdist = math.hypot(gdx, gdy)
-    goal_block = np.array([
-        gdx / dmax, gdy / dmax, min(gdist / dmax, 1.0),
-        1.0 if gdist < 5.0 else 0.0,
-    ], dtype=np.float32)
+    # --- goal (5): has_goal + 상대 벡터/거리(정규화) + 도달 flag ---
+    # RED(공격)만 fixed_dest 보유, BLUE(방어)는 None → has_goal=0, 나머지 0.
+    goal = getattr(troop, "fixed_dest", None)
+    if goal is not None:
+        gdx = goal.x - troop.coord.x
+        gdy = goal.y - troop.coord.y
+        gdist = math.hypot(gdx, gdy)
+        goal_block = np.array([
+            1.0, gdx / dmax, gdy / dmax, min(gdist / dmax, 1.0),
+            1.0 if gdist < 5.0 else 0.0,
+        ], dtype=np.float32)
+    else:
+        goal_block = np.zeros(5, dtype=np.float32)
     parts.append(goal_block)
 
     # --- enemies top-k (K*10) ---

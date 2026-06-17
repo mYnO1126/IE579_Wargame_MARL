@@ -85,7 +85,7 @@ class WargameParallelEnv:
         Troop.counter = {}  # 에피소드마다 id 재현성 (B_TA1, R_TA1, ...)
 
         with _silence():
-            self.cmap, troops, self.goals = spawn_episode(
+            self.cmap, troops = spawn_episode(
                 self.full_map, self.rng, size=self.map_size, comp=self.comp)
             self.troop_list = TroopList(troops)
         # TroopList.__init__ 가 빈 관측목록으로 assign_targets 를 호출해 next_fire_time=inf 로
@@ -116,7 +116,7 @@ class WargameParallelEnv:
         self._goal_dist = {}
         obs = {}
         for tr in self.troop_list.troops:
-            v, order = obsmod.build_observation(tr, self.troop_list, self.cmap, self.goals[tr.team])
+            v, order = obsmod.build_observation(tr, self.troop_list, self.cmap)
             obs[tr.id] = v
             self._enemy_order[tr.id] = order
             self._goal_dist[tr.id] = self._dist_to_goal(tr)
@@ -125,7 +125,9 @@ class WargameParallelEnv:
 
     # --- helpers ---
     def _dist_to_goal(self, tr):
-        g = self.goals[tr.team]
+        g = getattr(tr, "fixed_dest", None)   # 기존 시나리오 goal (RED만 보유)
+        if g is None:
+            return None
         return math.hypot(g.x - tr.coord.x, g.y - tr.coord.y)
 
     def _apply_move(self, tr, move_idx):
@@ -202,10 +204,11 @@ class WargameParallelEnv:
             if aid not in alive_ids:
                 rewards[aid] -= 1.0             # 사망
             else:
-                prev = self._goal_dist.get(aid, 0.0)
+                prev = self._goal_dist.get(aid)
                 cur = self._dist_to_goal(tr)
-                rewards[aid] += 0.01 * (prev - cur)   # goal 접근 진척
-                self._goal_dist[aid] = cur
+                if prev is not None and cur is not None:   # goal 있는 RED만 진척 보상
+                    rewards[aid] += 0.01 * (prev - cur)
+                    self._goal_dist[aid] = cur
 
         # 4) 종료/절단 판정
         self.n_decisions += 1
@@ -244,7 +247,7 @@ class WargameParallelEnv:
             for tr in self.troop_list.troops:
                 if not tr.alive:
                     continue
-                v, order = obsmod.build_observation(tr, self.troop_list, self.cmap, self.goals[tr.team])
+                v, order = obsmod.build_observation(tr, self.troop_list, self.cmap)
                 obs[tr.id] = v
                 self._enemy_order[tr.id] = order
                 next_agents.append(tr.id)
