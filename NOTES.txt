@@ -145,8 +145,11 @@ IE579_Wargame_MARL (구 IE571_2025) War Game — 작업 노트 / 참고사항 (C
    - [관측 변경] 지형: 11×11 패치(363) → **8방향 압축 특징 24차원**(이동가능거리/험준함/고도변화).
        OBS_DIM 479→140. CNN 불필요 → MLP로 결정.
    - [진행중] milestone 3 v1: IPPO(파라미터 공유) — rl/policy.py(MLP Actor-Critic, MultiDiscrete),
-       rl/train.py(GAE+PPO clip, 한 팀 정책 vs 상대 스크립트). 실행 conda run -n wargame python -m rl.train.
-       동작 확인(value loss 감소·체크포인트 저장). 중앙 critic(MAPPO/CTDE)은 다음 업그레이드.
+       rl/rollout.py(에피소드 수집+GAE, 한 팀 정책 vs 상대 스크립트), rl/train.py(PPO clip 업데이트).
+       실행 conda run -n wargame python -m rl.train. 동작 확인(value loss 감소·체크포인트 저장).
+       중앙 critic(MAPPO/CTDE)은 다음 업그레이드.
+   - [완료] 병렬 env: rl/parallel.py — 멀티프로세스 롤아웃 수집기(worker N개, --workers N).
+       단일 ~1000 → 8워커 ~7500 steps/s(약 7배, 32코어 머신). CPU 바운드라 멀티프로세스로만 진짜 병렬.
    - 다음: M3 본격 학습/튜닝 → MAPPO(중앙 critic) → 커리큘럼 → self-play → 풀시뮬 베이스라인 비교(§10).
    - 미정: 보상 계수, MAPPO global state 표현, self-play 전환 시점. (goal=RED만 fixed_dest, 지형=MLP 결정됨)
 
