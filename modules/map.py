@@ -247,21 +247,30 @@ class Map:  # Map class to store map information
         if n == 0:
             return True  # Same cell
 
-        # Precompute per-step increments
-        for step in range(1, n):
-            t = step / n
-            xi = int(round(x0 + (x1 - x0) * t))
-            yi = int(round(y0 + (y1 - y0) * t))
-            zi_expected = z0 + (z1 - z0) * t
-
-            # Bounds check (just in case)
-            if not (0 <= xi < self.width and 0 <= yi < self.height):
-                return False
-
-            ground_z = self.dem_arr[yi, xi]
-            if ground_z + 0.5 > zi_expected:  # Blocked
-                return False
-
+        #!CLAUDE 성능(M2): per-step 파이썬 루프를 numpy 벡터화. 동일한 정수 샘플점·판정식 → 결과 동일.
+        #         (양 끝점이 맵 안이면 선분 내부 점도 맵 안이므로 원래의 per-step bounds 체크는 불필요.)
+        # for step in range(1, n):
+        #     t = step / n
+        #     xi = int(round(x0 + (x1 - x0) * t))
+        #     yi = int(round(y0 + (y1 - y0) * t))
+        #     zi_expected = z0 + (z1 - z0) * t
+        #
+        #     # Bounds check (just in case)
+        #     if not (0 <= xi < self.width and 0 <= yi < self.height):
+        #         return False
+        #
+        #     ground_z = self.dem_arr[yi, xi]
+        #     if ground_z + 0.5 > zi_expected:  # Blocked
+        #         return False
+        #
+        # return True
+        t = np.arange(1, n) / n
+        xi = np.round(x0 + (x1 - x0) * t).astype(np.intp)
+        yi = np.round(y0 + (y1 - y0) * t).astype(np.intp)
+        zi_expected = z0 + (z1 - z0) * t
+        ground_z = self.dem_arr[yi, xi]
+        if np.any(ground_z + 0.5 > zi_expected):  # 한 점이라도 막히면 차단
+            return False
         return True
 
         

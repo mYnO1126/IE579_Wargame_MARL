@@ -17,11 +17,15 @@ from modules.unit_definitions import UnitType
 
 ENEMY_K = 5
 ALLY_K = 5
-PATCH = 11           # 자기 중심 지형 패치 한 변(픽셀)
-_HALF = PATCH // 2
 
-# self(11) + goal(5) + enemies(K*10) + allies(K*10) + terrain(PATCH*PATCH*3)
-OBS_DIM = 11 + 5 + ENEMY_K * 10 + ALLY_K * 10 + PATCH * PATCH * 3
+#!CLAUDE 지형 관측: 11x11 패치(363차원, CNN 필요) 대신 8방향 압축 특징으로 교체 → MLP로 충분.
+#         각 방향 = _MOVES 1..8 과 동일 순서. 방향마다 {이동가능거리, 평균 험준함, 고도변화} 3개.
+_DIR8 = ((0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1))
+_LOOK = 12             # 각 방향으로 직선 탐색할 셀 수
+TERR_FEATS = 8 * 3     # 24
+
+# self(11) + goal(5) + enemies(K*10) + allies(K*10) + terrain(8dir*3=24)
+OBS_DIM = 11 + 5 + ENEMY_K * 10 + ALLY_K * 10 + TERR_FEATS
 
 
 def unit_cat(t):
@@ -120,20 +124,29 @@ def build_observation(troop, troop_list, cm):
         ally_block[off + 9] = 1.0
     parts.append(ally_block)
 
-    # --- terrain patch (PATCH*PATCH*3): [이동비용, 경사, 숲] ---
+    # --- terrain: 8방향 직선 특징 (이동가능거리 / 평균 험준함 / 고도변화) ---
+    # 각 방향으로 _LOOK 셀까지 직진하며 통행 가능한 만큼의 거리·평균 이동비용·끝점 고도차를 요약.
     cx, cy = int(round(troop.coord.x)), int(round(troop.coord.y))
-    cost = np.full((PATCH, PATCH), 1.0, dtype=np.float32)   # 범위 밖=최대비용
-    slope = np.zeros((PATCH, PATCH), dtype=np.float32)
-    wood = np.zeros((PATCH, PATCH), dtype=np.float32)
-    for j in range(PATCH):
-        for i in range(PATCH):
-            x = cx + (i - _HALF)
-            y = cy + (j - _HALF)
-            if 0 <= x < W and 0 <= y < H:
-                c = cm.cost_map[y, x]
-                cost[j, i] = 1.0 if not np.isfinite(c) else min(float(c), 20.0) / 20.0
-                slope[j, i] = min(float(cm.slope_arr[y, x]) / 90.0, 1.0)
-                wood[j, i] = 1.0 if cm.wood_mask[y, x] else 0.0
-    parts.append(np.stack([cost, slope, wood], axis=-1).reshape(-1))
+    z0 = float(cm.dem_arr[cy, cx]) if (0 <= cx < W and 0 <= cy < H) else 0.0
+    terr = np.zeros(TERR_FEATS, dtype=np.float32)
+    for di, (ddx, ddy) in enumerate(_DIR8):
+        reach = 0
+        cost_sum = 0.0
+        end_z = z0
+        for s in range(1, _LOOK + 1):
+            x, y = cx + ddx * s, cy + ddy * s
+            if not (0 <= x < W and 0 <= y < H):
+                break
+            c = cm.cost_map[y, x]
+            if not np.isfinite(c):     # 통행 불가(호수/급경사) → 거기서 막힘
+                break
+            reach = s
+            cost_sum += min(float(c), 20.0)
+            end_z = float(cm.dem_arr[y, x])
+        off = di * 3
+        terr[off + 0] = reach / _LOOK                                    # 이동 가능 거리
+        terr[off + 1] = (cost_sum / reach / 20.0) if reach > 0 else 1.0  # 평균 험준함(0~1)
+        terr[off + 2] = float(np.clip((end_z - z0) / 50.0, -1.0, 1.0))   # 고도 변화(+=상승)
+    parts.append(terr)
 
     return np.concatenate(parts).astype(np.float32), enemy_order

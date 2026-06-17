@@ -140,8 +140,15 @@ IE579_Wargame_MARL (구 IE571_2025) War Game — 작업 노트 / 참고사항 (C
        · 검증: 다수 seed에서 정상 종료, 전투(사격·살상·보상) 동작 확인.
        · 주의: 기존 시뮬 print문이 많아 env 내부에서 stdout 억제(_silence)로 감쌈(추후 디버그 플래그 정리 권장).
                TroopList.__init__가 next_fire_time=inf로 만들어 reset에서 초기화함.
-   - 다음: milestone 2(고속화·벡터화로 step time↓), milestone 3(PyTorch MAPPO: 1팀 vs 스크립트→self-play).
-   - 미정: 지형패치 CNN vs MLP, 보상 계수, self-play 전환 시점. (goal은 RED만 fixed_dest로 결정됨)
+   - [완료] milestone 2(고속화): 핫스팟 numpy 벡터화 — obs.py 지형패치 + map.py is_visible(LOS).
+       값 동일 회귀검증 통과. 처리량 ~896→~1460 decisions/s. (전투 난수 미시드라 측정 노이즈 있음)
+   - [관측 변경] 지형: 11×11 패치(363) → **8방향 압축 특징 24차원**(이동가능거리/험준함/고도변화).
+       OBS_DIM 479→140. CNN 불필요 → MLP로 결정.
+   - [진행중] milestone 3 v1: IPPO(파라미터 공유) — rl/policy.py(MLP Actor-Critic, MultiDiscrete),
+       rl/train.py(GAE+PPO clip, 한 팀 정책 vs 상대 스크립트). 실행 conda run -n wargame python -m rl.train.
+       동작 확인(value loss 감소·체크포인트 저장). 중앙 critic(MAPPO/CTDE)은 다음 업그레이드.
+   - 다음: M3 본격 학습/튜닝 → MAPPO(중앙 critic) → 커리큘럼 → self-play → 풀시뮬 베이스라인 비교(§10).
+   - 미정: 보상 계수, MAPPO global state 표현, self-play 전환 시점. (goal=RED만 fixed_dest, 지형=MLP 결정됨)
 
 
 --------------------------------------------------------------------------------

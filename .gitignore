@@ -4,4 +4,5 @@ res_archive/*
 *.pyc
 terrain/load_file_test.ipynb
 rl/viz/*
+rl/policies/*
 __pycache__/
