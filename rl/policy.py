@@ -36,10 +36,14 @@ class ActorCritic(nn.Module):
         return dists
 
     @torch.no_grad()
-    def act(self, obs):
-        """행동 샘플링(actor만). obs (B, obs_dim) → acts (B,3), logp (B,)."""
+    def act(self, obs, deterministic=False):
+        """행동 선택(actor만). obs (B, obs_dim) → acts (B,3), logp (B,).
+        deterministic=True 면 각 헤드 argmax(평가용), 아니면 샘플링(학습용)."""
         dists = self._dists(self.actor(obs))
-        acts = torch.stack([d.sample() for d in dists], dim=-1)
+        if deterministic:
+            acts = torch.stack([torch.argmax(d.probs, dim=-1) for d in dists], dim=-1)
+        else:
+            acts = torch.stack([d.sample() for d in dists], dim=-1)
         logp = torch.stack([d.log_prob(acts[..., k]) for k, d in enumerate(dists)], dim=-1).sum(-1)
         return acts, logp
 

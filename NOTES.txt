@@ -151,6 +151,12 @@ IE579_Wargame_MARL (구 IE571_2025) War Game — 작업 노트 / 참고사항 (C
        rl/obs.build_global_state(시간·생존율·중심·분산). 단, 이 setup(밀집 per-agent 보상)에선
        IPPO 대비 개선 미미([G]1). 보상이 희소/팀단위거나 self-play일 때 유효할 것으로 봄.
    - 학습 결과(scripted 상대): BLUE ~95% win(유리), RED ~17~20% plateau(불리·천장).
+   - [완료] 베이스라인 비교 하니스: rl/evaluate.py — 한 팀 [학습정책] vs [rule-based(scripted)]를
+       같은 상대·같은 seed들로 N에피소드 비교(승률/loss/아군·적 생존율). 성공기준=rule-based 대비 개선.
+       실행 conda run -n wargame python -m rl.evaluate --ckpt rl/policies/ippo_<team>.pt --episodes 200.
+       결과(200ep): BLUE win 0.82→0.89·loss 0.11→0.035·아군생존 0.55→0.73(모든 지표 개선),
+       RED loss 0.82→0.70·아군생존 0.065→0.166·win 0.105→0.120(절대승률 낮아도 개선). → 양 팀 다 개선.
+       주의: 여기 "rule-based"는 RL env용 scripted_action proxy. 엄밀 비교는 풀 시뮬 통합 단계(§10).
    - [완료] 병렬 env: rl/parallel.py — 멀티프로세스 롤아웃 수집기(worker N개, --workers N).
        단일 ~1000 → 8워커 ~7500 steps/s(약 7배, 32코어 머신). CPU 바운드라 멀티프로세스로만 진짜 병렬.
    - 다음: M3 본격 학습/튜닝 → MAPPO(중앙 critic) → 커리큘럼 → self-play → 풀시뮬 베이스라인 비교(§10).

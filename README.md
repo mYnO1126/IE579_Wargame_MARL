@@ -82,3 +82,56 @@ results saved in res/res*
 
 ```
 
+### MARL (Reinforcement Learning)
+
+Each troop is treated as an RL agent. The RL code (`rl/`) wraps the existing simulation as a
+PettingZoo-style parallel multi-agent environment and reuses its dynamics (firing Ph/Pk, line of
+sight, terrain, observation); only the per-unit decisions (move / target / engage) are learned.
+Design spec: [`rl/DESIGN.md`](rl/DESIGN.md).
+
+The RL code needs **PyTorch** in the `wargame` env (the base simulation only needs
+numpy/pandas/matplotlib):
+
+```bash
+conda activate wargame
+pip install torch        # use the CUDA build if you have a GPU
+```
+
+All commands run from the repo root.
+
+**1. Sanity-check the environment (random policy, no learning):**
+
+```bash
+python -m rl.random_rollout            # run one episode with random actions
+```
+
+**2. Train a policy** (parameter-shared PPO; one team learns, the other plays a scripted
+rule-based policy). MAPPO centralized critic is built in.
+
+```bash
+python -m rl.train --team red  --iters 120 --workers 8
+python -m rl.train --team blue --iters 80  --workers 8
+```
+
+- `--team {red,blue}` : which side the policy controls.
+- `--workers N` : number of parallel rollout processes (`1` = single env; more ≈ N× faster).
+- other flags: `--iters --roll --lr --seed --cuda` (see `python -m rl.train -h`).
+- the trained policy is saved to `rl/policies/ippo_<team>.pt`.
+
+**3. Visualize an episode** (saves PNG frames to `rl/viz/ep_*/`):
+
+```bash
+python -m rl.visualize_episode --mode board --seed 3
+# --mode {board,tactical}   --every N (sim-min per frame)   --legend   --policy {scripted,random}
+```
+
+**4. Evaluate a trained policy vs the rule-based baseline** (the project's success criterion is
+*improvement over rule-based*, not absolute win rate):
+
+```bash
+python -m rl.evaluate --ckpt rl/policies/ippo_red.pt --episodes 200
+```
+
+Prints a table comparing the MARL policy and the rule-based (scripted) baseline
+(win / loss / survival). Outputs under `rl/policies/` and `rl/viz/` are gitignored.
+
