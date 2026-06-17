@@ -20,8 +20,8 @@ ALLY_K = 5
 PATCH = 11           # 자기 중심 지형 패치 한 변(픽셀)
 _HALF = PATCH // 2
 
-# self(9) + goal(5) + enemies(K*10) + allies(K*10) + terrain(PATCH*PATCH*3)
-OBS_DIM = 9 + 5 + ENEMY_K * 10 + ALLY_K * 10 + PATCH * PATCH * 3
+# self(11) + goal(5) + enemies(K*10) + allies(K*10) + terrain(PATCH*PATCH*3)
+OBS_DIM = 11 + 5 + ENEMY_K * 10 + ALLY_K * 10 + PATCH * PATCH * 3
 
 
 def unit_cat(t):
@@ -65,14 +65,17 @@ def build_observation(troop, troop_list, cm):
 
     parts = []
 
-    # --- self (9) ---
-    self_block = np.zeros(9, dtype=np.float32)
+    # --- self (11) ---
+    self_block = np.zeros(11, dtype=np.float32)
     self_block[0:5] = _cat_onehot(troop.type)
     self_block[5] = 1.0 if getattr(troop, "status", None) and troop.status.value == "mobility_damaged" else 0.0
     self_block[6] = 1.0 if getattr(troop, "status", None) and troop.status.value == "firepower_damaged" else 0.0
     self_block[7] = min(troop.range_km / 4.0, 1.0)
     enemy_order = _topk_by_distance(troop, enemies_pool, ENEMY_K)
     self_block[8] = 1.0 if (enemy_order and troop.get_distance(enemy_order[0]) <= troop.range_km) else 0.0
+    # 절대위치(맵 경계 인지용) — 정규화
+    self_block[9] = troop.coord.x / W
+    self_block[10] = troop.coord.y / H
     parts.append(self_block)
 
     # --- goal (5): has_goal + 상대 벡터/거리(정규화) + 도달 flag ---

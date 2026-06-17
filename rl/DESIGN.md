@@ -75,20 +75,20 @@ rl/
 
 | 블록 | 필드 | 차원(초안) |
 |---|---|---|
-| self | 병종범주 one-hot(5), 기동손상, 화력손상, range_km(정규화), 사거리내 적 flag | 9 |
+| self | 병종범주 one-hot(5), 기동손상, 화력손상, range_km(정규화), 사거리내 적 flag, 절대위치 x/W·y/H | 11 |
 | goal | has_goal flag, 상대 dx, dy(정규화), 거리(정규화), 도달 flag | 5 |
 | enemies top-k (k=5) | 각: 상대 dx, dy, 거리, 병종범주(5), 사거리내 flag, valid | 5×10 = 50 |
 | allies top-k (k=5) | 각: 상대 dx, dy, 거리, 병종범주(5), 손상 flag, valid | 5×10 = 50 |
 | 지형 패치 | 자기중심 11×11, 채널=[이동비용(정규화), 경사, 숲] | 11×11×3 = 363 |
 
-→ 합계 **OBS_DIM = 477**.
+→ 합계 **OBS_DIM = 479**.
 
 - **goal = 기존 시나리오의 per-troop `fixed_dest` 그대로 사용.** 공격하는 RED 만 goal 보유,
   방어하는 BLUE 는 goal 없음(has_goal=0, 나머지 0). 풀 시나리오 배포 시에도 PLACEMENT 의
   `fixed_dest` 를 그대로 읽으므로 학습/배포가 일관됨.
 - 지형 패치는 **지형 전술 학습에 사실상 필수**(고지/엄폐/도로). 초기엔 작은 CNN 또는 flatten MLP.
 - top-k는 거리순. 적은 **탐지된(observed) 적만** 노출(부분관측, 기존 `observed` 시스템 사용).
-- 절대위치(x/W, y/H)는 선택적으로 self에 추가 가능(맵 경계 인지용).
+- 절대위치(x/W, y/H)를 self 에 **포함**(결정됨, 맵 경계 인지용).
 
 
 ## 5. 행동 공간 (Action) — MultiDiscrete `[move, target, engage]`
@@ -188,6 +188,6 @@ rl/
   goal 보유, BLUE(방어)는 없음(웬만하면 정지). 학습 크롭에선 RED 에 BLUE 진영 쪽 goal 자동 부여.
 - hold-fire(은폐 전술) 도입 시점.
 - 보상 계수·정규화 스케일.
-- 관측에 절대위치 포함 여부.
+- ~~관측에 절대위치 포함 여부~~ → **결정됨: 포함**(self 에 x/W, y/H, OBS_DIM 477→479).
 - 탄약/보급(현재 시뮬에서 비활성) 학습 범위 포함 여부.
 - 중앙 critic의 global state 표현(전체 유닛 요약 방식).
