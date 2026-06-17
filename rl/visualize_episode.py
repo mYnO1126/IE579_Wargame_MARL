@@ -40,9 +40,11 @@ def main():
     ap.add_argument("--policy", choices=["scripted", "random"], default="scripted")
     ap.add_argument("--mode", choices=["board", "tactical"], default="board")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--map_size", type=int, default=120)
+    ap.add_argument("--map_size", type=int, default=160)
     ap.add_argument("--every", type=int, default=1,
                     help="N 시뮬분마다 1프레임 (1=매분, 5=결정마다)")
+    ap.add_argument("--legend", action="store_true",
+                    help="그림 안에 범례 표시 (기본: 표시 안 함)")
     args = ap.parse_args()
 
     save_dir = os.path.join(_ROOT, "rl", "viz", f"ep_{args.policy}_seed{args.seed}")
@@ -58,8 +60,8 @@ def main():
     policy = scripted_policy if args.policy == "scripted" else random_policy
 
     # step() 내부에서 매 args.every 시뮬분마다 프레임 자동 저장(1분 단위면 전투가 부드럽게 보임)
-    env.set_recording(save_dir, mode=args.mode, every=args.every)
-    env.render(save_dir, mode=args.mode)   # 초기 프레임 (t=0)
+    env.set_recording(save_dir, mode=args.mode, every=args.every, show_legend=args.legend)
+    env.render(save_dir, mode=args.mode, show_legend=args.legend)   # 초기 프레임 (t=0)
     step = 0
     while env.agents:
         env.step(policy(env, rng))

@@ -16,7 +16,7 @@ from rl.env import WargameParallelEnv
 
 def main(seed=0):
     rng = np.random.default_rng(seed)
-    env = WargameParallelEnv(map_size=120, decision_interval=5, max_decisions=60, seed=seed)
+    env = WargameParallelEnv(map_size=160, decision_interval=5, max_decisions=60, seed=seed)
     obs, infos = env.reset(seed=seed)
 
     print(f"[reset] agents={len(env.agents)}  obs_dim={env.observation_space(env.agents[0]).shape}  "

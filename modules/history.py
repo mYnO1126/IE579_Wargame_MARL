@@ -135,7 +135,7 @@ class History:  # Store history of troop actions and troop status
 
     def draw_troop_positions(self, Map, troop_list, current_time, save_dir="frames",
                            show_attack_lines=True, show_ranges=True, show_paths=False,
-                           show_move_arrows=False):
+                           show_move_arrows=False, show_legend=False):
         # plt.figure(figsize=(16, 8))
 
         # --- 입력 데이터 ---
@@ -252,7 +252,9 @@ class History:  # Store history of troop actions and troop status
                           linewidth=1, label='Move dir')
             )
 
-        ax.legend(handles=legend_elements, loc='lower right', bbox_to_anchor=(1.2, 0.0))
+        #!CLAUDE 범례는 옵션(기본 OFF). show_legend=True 일 때만 표시.
+        if show_legend:
+            ax.legend(handles=legend_elements, loc='lower right', bbox_to_anchor=(1.2, 0.0))
         # ----지형 시각화 추가 ----
 
         plt.tight_layout()
@@ -426,7 +428,8 @@ class History:  # Store history of troop actions and troop status
                      head_width=4.0, head_length=4.5, fc="black", ec="black",
                      alpha=0.95, linewidth=1.6, zorder=6, length_includes_head=True)
 
-    def create_tactical_overview(self, Map, troop_list: TroopList, current_time, save_dir="frames"):
+    def create_tactical_overview(self, Map, troop_list: TroopList, current_time, save_dir="frames",
+                                 show_legend=False):
         """🟢 전술 개요 시각화 (별도 파일)"""
         #!CLAUDE 가독성 개선: 지형 배경 + 팀/병종 범례 + 시계 제목, 교전 히트맵 정비.
         #         + 프레임 안정화: 축 위치를 고정(add_axes)하고 컬러바 자리를 항상 예약해
@@ -452,7 +455,7 @@ class History:  # Store history of troop actions and troop status
         ax2 = fig.add_axes([0.545, 0.10, 0.36, 0.80])   # 우: 교전 히트맵
         cax = fig.add_axes([0.915, 0.10, 0.013, 0.80])  # 히트맵 컬러바 자리
 
-        self._create_overview_plot(ax1, Map, troop_list, current_time)
+        self._create_overview_plot(ax1, Map, troop_list, current_time, show_legend=show_legend)
         self._create_engagement_heatmap(ax2, Map, troop_list, current_time, cax=cax)
 
         fig.suptitle(
@@ -463,7 +466,7 @@ class History:  # Store history of troop actions and troop status
                     dpi=150, facecolor="white")
         plt.close(fig)
 
-    def _create_overview_plot(self, ax, Map, troop_list: TroopList, current_time):
+    def _create_overview_plot(self, ax, Map, troop_list: TroopList, current_time, show_legend=False):
         """전체 전술 상황 플롯"""
         #!CLAUDE 가독성 개선: 단조로운 DEM 대신 지형 마스크(도로/물/숲/개울)를 함께 표시하고
         #         부대 마커를 키우며 팀·병종·지형 범례를 추가.
@@ -487,8 +490,16 @@ class History:  # Store history of troop actions and troop status
         ax.imshow(binarize(Map.lake_mask),   cmap=ListedColormap(["none", "#2f6fb0"]), origin="upper", alpha=0.55)
         ax.imshow(binarize(Map.stream_mask), cmap=ListedColormap(["none", "#5aa0e0"]), origin="upper", alpha=0.55)
 
+        #!CLAUDE 전술 요소 추가: 공격선(사격 방향) + goal선(이동 목표)을 마커 뒤에 깔고,
+        #         이동 방향 화살표는 마커 위에. (이전엔 마커만 그려 방향 정보가 안 보였음)
+        self._draw_attack_lines(ax, troop_list)
+        self._draw_movement_paths(ax, troop_list)
+
         # 부대 마커 (크게)
         self._draw_troop_markers(ax, troop_list, size_scale=4.0)
+
+        # 실제 이동 방향 화살표 (마커 위)
+        self._draw_move_arrows(ax, troop_list)
 
         ax.set_title("Tactical Situation", fontsize=13, fontweight="bold", pad=8)
         ax.set_xlabel("X (px · 10 m)", fontsize=10)
@@ -496,6 +507,10 @@ class History:  # Store history of troop actions and troop status
         ax.set_xlim(0, Map.width)
         ax.set_ylim(Map.height, 0)
         ax.set_aspect("equal")
+
+        #!CLAUDE 범례는 옵션(기본 OFF) — show_legend=True 일 때만 두 범례를 그림
+        if not show_legend:
+            return
 
         # 범례 1: 팀 색상 + 지형 (좌상단)
         map_handles = [
