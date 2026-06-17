@@ -62,7 +62,7 @@ def main():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--cuda", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--save", default=os.path.join(_ROOT, "rl", "policies", "ippo.pt"))
+    ap.add_argument("--save", default=None, help="기본: rl/policies/ippo_<team>.pt (팀별 분리)")
     args = ap.parse_args()
 
     device = "cuda" if (args.cuda and torch.cuda.is_available()) else "cpu"
@@ -94,10 +94,11 @@ def main():
               f"ep_return {st['ep_return']:+6.2f} | win {st['win_rate']:.2f} | "
               f"ploss {pl:+.3f} vloss {vl:7.3f} | {st['agent_steps']/dt:6.0f} steps/s")
 
-    os.makedirs(os.path.dirname(args.save), exist_ok=True)
+    save = args.save or os.path.join(_ROOT, "rl", "policies", f"ippo_{args.team}.pt")
+    os.makedirs(os.path.dirname(save), exist_ok=True)
     torch.save({"model": policy.state_dict(), "obs_dim": obsmod.OBS_DIM,
-                "act_nvec": policy.act_nvec, "team": args.team}, args.save)
-    print(f"saved policy -> {args.save}")
+                "act_nvec": policy.act_nvec, "team": args.team}, save)
+    print(f"saved policy -> {save}")
     if collector is not None:
         collector.close()
 
