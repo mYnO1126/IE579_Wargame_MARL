@@ -1,0 +1,200 @@
+IE579 Wargame MARL - PPT Slide Draft
+====================================
+
+1. Title
+--------
+IE579 Wargame MARL: Troop-Level Multi-Agent Reinforcement Learning
+
+- 실제 지형 기반 전투 시뮬레이터에서 troop-level MARL 정책 학습
+- Scenario: Valley of Tears, Yom Kippur War
+- Goal: 기존 rule-based decision을 learned MARL policy로 대체하고 성능 비교
+
+
+2. Motivation
+-------------
+- 전투 상황은 대표적인 multi-agent decision-making problem
+- 각 유닛은 제한된 관측만 가지고 이동, 표적 선택, 교전 여부를 결정해야 함
+- 지형, 사거리, line-of-sight, 병종 차이 때문에 단순 single-agent RL로 모델링하기 어려움
+- 본 프로젝트는 rule-based wargame simulator를 MARL 환경으로 확장함
+
+
+3. Scenario
+-----------
+- 배경: 1973 Arab-Israeli War, Valley of Tears 전투
+- Blue: Israeli defense force
+- Red: Syrian attacking force
+- 실제 Golan Heights 지형 데이터 사용
+- 전투는 phase별 증원과 공격/방어 이벤트에 따라 진행됨
+
+
+4. Simulator Features
+---------------------
+- DEM 기반 고도 정보
+- slope, road, water, forest, stream mask 반영
+- 지형별 이동 비용 계산
+- line-of-sight 기반 관측
+- 병종별 weapon range, hit probability, kill probability
+- 시간 흐름에 따른 reinforcement timeline
+
+
+5. Baseline: Rule-Based Wargame
+-------------------------------
+- 기존 시뮬레이터는 rule-based decision logic 사용
+- Movement: fixed destination, A*, flow-field, tactical manager
+- Targeting: observed enemy 중 병종별 priority rule 적용
+- Engagement: 사거리와 fire time 조건 만족 시 자동 사격
+- MARL 정책은 이 rule-based decision layer를 대체함
+
+
+6. MARL Formulation
+-------------------
+- Agent: 살아있는 각 troop
+- Team: Blue / Red
+- Observation: local partial observation
+- Action: move, target, engage
+- Reward: damage dealt, damage received, goal progress, terminal result
+- Objective: rule-based baseline보다 높은 combat efficiency 달성
+
+
+7. Observation Space
+--------------------
+Observation dimension = 140
+
+- Self features: unit type, damage state, range, position
+- Goal features: goal existence, direction, distance
+- Enemy features: top-5 observed enemies
+- Ally features: top-5 nearby allies
+- Terrain features: 8-direction movement/roughness/elevation summary
+- 모든 위치와 거리는 egocentric / normalized 형태로 표현
+
+
+8. Action Space
+---------------
+MultiDiscrete [move, target, engage]
+
+- Move: 9 actions
+  stop + 8 directions
+- Target: 6 actions
+  top-5 observed enemies + none
+- Engage: 2 actions
+  fire / hold
+- 정책은 고수준 decision만 선택하고, 실제 이동거리/명중/피해 판정은 simulator가 계산
+
+
+9. Reward Design
+----------------
+- Enemy destroyed: positive reward
+- Enemy damaged: small positive reward
+- Own damage or death: negative reward
+- Goal progress: small shaping reward for attacking units
+- Terminal reward: win/loss bonus
+- 설계 의도: 단순 승률보다 손실 교환비와 생존성을 개선하도록 유도
+
+
+10. Algorithm
+-------------
+- PPO-based parameter sharing policy
+- 한 팀의 troop들이 동일한 actor-critic network 공유
+- Actor: local observation만 사용
+- Critic: local observation + team-level global state 사용
+- MAPPO-style CTDE 구조:
+  centralized training, decentralized execution
+
+
+11. Training Environment
+------------------------
+- 전체 전장을 직접 학습하면 너무 크고 느리기 때문에 crop map 사용
+- 실제 Golan map에서 small random crop 생성
+- 소규모 Blue vs Red 교전으로 episode 구성
+- Opponent는 scripted rule-based policy
+- Parallel rollout workers로 sample collection 가속
+
+
+12. Evaluation Design
+---------------------
+- 핵심 비교: MARL policy vs rule-based baseline
+- 동일 seed에서 baseline과 policy configuration 비교
+- 주요 지표:
+  - LER = enemy losses / own losses
+  - Survival rate
+  - Own losses
+  - Enemy losses
+  - Win rate
+- Scenario가 비대칭이므로 absolute win rate보다 rule-based 대비 개선을 중시
+
+
+13. Crop Evaluation Results
+---------------------------
+표 예시:
+
+| Team | Method     | LER | Survival | Own Loss | Enemy Loss | Win Rate |
+|------|------------|-----|----------|----------|------------|----------|
+| Blue | Rule-based | 값  | 값       | 값       | 값         | 값       |
+| Blue | MARL       | 값  | 값       | 값       | 값         | 값       |
+| Red  | Rule-based | 값  | 값       | 값       | 값         | 값       |
+| Red  | MARL       | 값  | 값       | 값       | 값         | 값       |
+
+슬라이드 하단 문장:
+- MARL policy improves combat efficiency over rule-based baseline in cropped engagements.
+- LER and survival rate are used as primary metrics.
+
+
+14. Full Scenario Evaluation
+----------------------------
+- 학습된 policy를 전체 Golan scenario에 배포
+- Original PLACEMENT and TIMELINE 유지
+- 물리, LOS, 사격 판정은 동일하게 유지
+- 특정 팀의 decision만 MARL policy로 교체
+- Full scenario는 unit 수와 map scale이 커서 variance가 큼
+- Crop-to-full transfer는 가능성을 보였지만 추가 curriculum/self-play가 필요함
+
+
+15. Visualization / Demo
+------------------------
+넣을 이미지:
+- res/res0/frames_tactics/*.png
+- 또는 rl/viz/ep_scripted_seed*/
+
+슬라이드 문안:
+- Blue/Red troop positions
+- Weapon range and engagement lines
+- Terrain layers: road, forest, water, elevation
+- Learned policy behavior can be qualitatively inspected through episode rendering
+
+
+16. Code Architecture
+---------------------
+modules/
+  map.py              terrain, LOS, movement cost
+  troop.py            troop state, targeting, combat
+  placement.py        scenario deployment
+  timeline.py         phase events
+  history.py          logging and visualization
+
+rl/
+  env.py              MARL environment
+  obs.py              observation builder
+  policy.py           actor-critic network
+  rollout.py          PPO rollout collection
+  train.py            training loop
+  evaluate.py         crop evaluation
+  full_eval.py        full scenario evaluation
+
+
+17. Limitations
+---------------
+- Self-play is not fully explored
+- Full scenario transfer remains difficult
+- Combat randomness creates high variance
+- Action masking could improve learning efficiency
+- Centralized critic currently uses compact global state
+- More curriculum training is needed for large-scale deployment
+
+
+18. Conclusion
+--------------
+- 기존 rule-based wargame simulator를 MARL environment로 확장
+- 각 troop을 decentralized agent로 모델링
+- PPO / MAPPO-style CTDE 기반 정책 학습 구현
+- Rule-based baseline 대비 crop evaluation에서 combat efficiency 개선 확인
+- Full-scale scenario deployment까지 연결 가능한 framework 구축

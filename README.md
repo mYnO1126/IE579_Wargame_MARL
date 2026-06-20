@@ -53,6 +53,7 @@ conda activate wargame
 
 ```bash
 pip install -r requirements.txt  # install
+pip install torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu130
 ```
 
 ### Run War Game Simulation
@@ -129,9 +130,28 @@ python -m rl.visualize_episode --mode board --seed 3
 *improvement over rule-based*, not absolute win rate):
 
 ```bash
-python -m rl.evaluate --ckpt rl/policies/ippo_red.pt --episodes 200
+python -m rl.evaluate --blue rl/policies/ippo_blue.pt --episodes 200          # blue policy vs rule
+python -m rl.evaluate --blue ...ippo_blue.pt --red ...ippo_red.pt --episodes 200  # both teams policy
 ```
 
-Prints a table comparing the MARL policy and the rule-based (scripted) baseline
-(win / loss / survival). Outputs under `rl/policies/` and `rl/viz/` are gitignored.
+`--blue`/`--red` are each optional: a side with a checkpoint uses the policy, a side without uses
+the rule-based logic; the comparison is always against the all-rule baseline. Prints a per-team table:
+**loss-exchange ratio (LER)**, win/loss, own/enemy survival, casualties. This is the
+*statistical* comparison — fast, many short episodes on small maps. (Win rate alone is
+misleading; LER = enemy losses / own losses is the primary combat-efficiency metric.)
+
+**5. Full-scenario comparison** — run the *entire* scenario (full Golan map, PLACEMENT/TIMELINE)
+with one team's decisions driven by the policy vs the rule-based logic, everything else identical:
+
+```bash
+python -m rl.full_eval --blue rl/policies/ippo_blue.pt --seeds 1               # blue policy vs rule
+python -m rl.full_eval --blue ...ippo_blue.pt --red ...ippo_red.pt --seeds 1   # both teams policy
+# --blue/--red optional (≥1 required); compared against the all-rule baseline; reports both teams.
+# runs to the original MAX_TIME (2880 min) / natural termination; slow (minutes per run).
+# --max_time N truncates for a quick smoke (but then later TIMELINE reinforcements may not arrive).
+# --seeds N : a full battle is high-variance, so more seeds give a more reliable comparison.
+```
+
+Note: a trained checkpoint must match the *current* observation format; if you changed `rl/obs.py`,
+retrain before evaluating. Outputs under `rl/policies/` and `rl/viz/` are gitignored.
 
