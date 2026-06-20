@@ -24,6 +24,10 @@ _DIR8 = ((0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1))
 _LOOK = 12             # 각 방향으로 직선 탐색할 셀 수
 TERR_FEATS = 8 * 3     # 24
 
+#!CLAUDE 거리 정규화 고정 기준(px, ≈3km). 맵 대각선(dmax) 대신 이 값으로 나눠 크롭↔풀맵 스케일 일관.
+#         방향은 단위벡터(스케일 불변), 거리는 _DREF로 정규화(클립). 풀 시뮬 배포 전이 격차 완화.
+_DREF = 300.0
+
 # self(11) + goal(5) + enemies(K*10) + allies(K*10) + terrain(8dir*3=24)
 OBS_DIM = 11 + 5 + ENEMY_K * 10 + ALLY_K * 10 + TERR_FEATS
 
@@ -58,11 +62,19 @@ def _topk_by_distance(troop, others, k):
     return alive[:k]
 
 
+def _dir_dist(dx, dy):
+    """상대 변위(px) → (단위방향 ux, uy, 정규화 거리 min(d/_DREF,1)). 맵 크기와 무관."""
+    d = math.hypot(dx, dy)
+    if d < 1e-6:
+        return 0.0, 0.0, 0.0
+    return dx / d, dy / d, min(d / _DREF, 1.0)
+
+
 def build_observation(troop, troop_list, cm):
     """troop 한 기의 관측 벡터와 enemy_order 를 만든다.
-    goal 은 기존 시나리오와 동일하게 troop.fixed_dest 를 사용한다(RED만 보유, BLUE는 None)."""
+    goal 은 기존 시나리오와 동일하게 troop.fixed_dest 를 사용한다(RED만 보유, BLUE는 None).
+    거리/방향은 맵 크기 무관(_DREF 기준 + 단위벡터)으로 정규화."""
     W, H = cm.width, cm.height
-    dmax = math.hypot(W, H)
 
     if troop.team == "blue":
         enemies_pool = troop_list.red_observed
@@ -90,27 +102,22 @@ def build_observation(troop, troop_list, cm):
     # RED(공격)만 fixed_dest 보유, BLUE(방어)는 None → has_goal=0, 나머지 0.
     goal = getattr(troop, "fixed_dest", None)
     if goal is not None:
-        gdx = goal.x - troop.coord.x
-        gdy = goal.y - troop.coord.y
-        gdist = math.hypot(gdx, gdy)
-        goal_block = np.array([
-            1.0, gdx / dmax, gdy / dmax, min(gdist / dmax, 1.0),
-            1.0 if gdist < 5.0 else 0.0,
-        ], dtype=np.float32)
+        gux, guy, gnd = _dir_dist(goal.x - troop.coord.x, goal.y - troop.coord.y)
+        goal_block = np.array([1.0, gux, guy, gnd, 1.0 if gnd * _DREF < 5.0 else 0.0], dtype=np.float32)
     else:
         goal_block = np.zeros(5, dtype=np.float32)
     parts.append(goal_block)
 
-    # --- enemies top-k (K*10) ---
+    # --- enemies top-k (K*10): 단위방향 + 정규화거리 + 병종 + 사거리내 + valid ---
     enemy_block = np.zeros(ENEMY_K * 10, dtype=np.float32)
     for i, e in enumerate(enemy_order):
-        d = troop.get_distance(e)
         off = i * 10
-        enemy_block[off + 0] = (e.coord.x - troop.coord.x) / dmax
-        enemy_block[off + 1] = (e.coord.y - troop.coord.y) / dmax
-        enemy_block[off + 2] = min((d * 100.0) / dmax, 1.0)  # d(km)->px
+        ux, uy, nd = _dir_dist(e.coord.x - troop.coord.x, e.coord.y - troop.coord.y)
+        enemy_block[off + 0] = ux
+        enemy_block[off + 1] = uy
+        enemy_block[off + 2] = nd
         enemy_block[off + 3:off + 8] = _cat_onehot(e.type)
-        enemy_block[off + 8] = 1.0 if d <= troop.range_km else 0.0
+        enemy_block[off + 8] = 1.0 if troop.get_distance(e) <= troop.range_km else 0.0
         enemy_block[off + 9] = 1.0  # valid
     parts.append(enemy_block)
 
@@ -118,11 +125,11 @@ def build_observation(troop, troop_list, cm):
     ally_order = _topk_by_distance(troop, allies_pool, ALLY_K)
     ally_block = np.zeros(ALLY_K * 10, dtype=np.float32)
     for i, a in enumerate(ally_order):
-        d = troop.get_distance(a)
         off = i * 10
-        ally_block[off + 0] = (a.coord.x - troop.coord.x) / dmax
-        ally_block[off + 1] = (a.coord.y - troop.coord.y) / dmax
-        ally_block[off + 2] = min((d * 100.0) / dmax, 1.0)
+        ux, uy, nd = _dir_dist(a.coord.x - troop.coord.x, a.coord.y - troop.coord.y)
+        ally_block[off + 0] = ux
+        ally_block[off + 1] = uy
+        ally_block[off + 2] = nd
         ally_block[off + 3:off + 8] = _cat_onehot(a.type)
         ally_block[off + 8] = 1.0 if getattr(a, "status", None) and "damaged" in a.status.value else 0.0
         ally_block[off + 9] = 1.0

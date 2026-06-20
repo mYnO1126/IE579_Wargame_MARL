@@ -60,6 +60,8 @@ def main():
     ap.add_argument("--team", choices=["red", "blue"], default="red")
     ap.add_argument("--roll", type=int, default=2048, help="iteration당 학습팀 agent-step")
     ap.add_argument("--workers", type=int, default=1, help="병렬 롤아웃 worker 프로세스 수 (1=단일 env)")
+    ap.add_argument("--map_size", type=int, default=160, help="학습 크롭 맵 크기(px). 클수록 풀맵에 가까움")
+    ap.add_argument("--units", type=int, default=1, help="유닛 수 배수(커리큘럼: 기본 편성×배수)")
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--cuda", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
@@ -69,7 +71,11 @@ def main():
     device = "cuda" if (args.cuda and torch.cuda.is_available()) else "cpu"
     torch.manual_seed(args.seed); np.random.seed(args.seed)
 
-    env = WargameParallelEnv(seed=args.seed)   # action_space nvec용(+단일 워커면 롤아웃에도 사용)
+    # 커리큘럼: 기본 편성을 --units 배로 늘림(유닛 수↑). units=1이면 기본.
+    from rl.spawn import DEFAULT_COMP
+    comp = None if args.units <= 1 else {t: DEFAULT_COMP[t] * args.units for t in DEFAULT_COMP}
+
+    env = WargameParallelEnv(map_size=args.map_size, comp=comp, seed=args.seed)
     nvec = list(env.action_space("x").nvec)
     policy = ActorCritic(obsmod.OBS_DIM, nvec, obsmod.GLOBAL_DIM).to(device)
     opt = torch.optim.Adam(policy.parameters(), lr=args.lr)
@@ -78,7 +84,8 @@ def main():
     if args.workers > 1:
         from rl.parallel import ParallelCollector
         collector = ParallelCollector(args.workers, args.team, obsmod.OBS_DIM,
-                                      nvec, obsmod.GLOBAL_DIM, seed=args.seed)
+                                      nvec, obsmod.GLOBAL_DIM, seed=args.seed,
+                                      map_size=args.map_size, comp=comp)
 
     print(f"device={device}  team={args.team}  workers={args.workers}  obs_dim={obsmod.OBS_DIM}  "
           f"params={sum(p.numel() for p in policy.parameters())}")
