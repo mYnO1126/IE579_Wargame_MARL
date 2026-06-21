@@ -6,18 +6,16 @@ import random
 from .map import Coord, Velocity, Map, MAX_TIME, TIME_STEP
 from .unit_definitions import UnitStatus, UnitType, UnitComposition, HitState, UNIT_SPECS, get_landing_data, AMMUNITION_DATABASE, AmmunitionInfo, SUPPLY_DATABASE
 
-#!TEMP >>>>
 from .map import astar_pathfinding, TacticalManager, build_flow_field
 from typing import List, Tuple, Optional
-#!TEMP <<<<
 
 BLUE_RANGE_BUFF = 1.2  # BLUE 진영의 사거리 버프 (20% 증가)
 BLUE_HIT_PROB_BUFF = 0.8  # BLUE 진영의 명중 확률 버프
 BLUE_OBS_BUFF = 1.2  # BLUE 진영의 관측 버프 (1.5배 더 관측 가능)
 # RED_RANGE_BUFF = 0.8  # RED 진영의 사거리 버프 (기본값, 0% 증가)
 PATHFIND_COOLDOWN = 30.0  # A* 경로 재계산 쿨타임 (초 단위)
-#!CLAUDE 메모리: 플로우 필드 1개 ≈ 8MB(649*791*2 float64). 무한 캐시 증가를 막기 위한 상한(FIFO 제거).
-#         캐시 미스 시 재계산하며 결과는 동일하므로 시뮬레이션 동작은 변하지 않음.
+# 메모리: 플로우 필드 1개 ≈ 8MB(649*791*2 float64). 무한 캐시 증가를 막기 위한 상한.
+# 캐시 미스 시 재계산하면 되므로 가장 오래된 항목을 버린다.
 FLOW_FIELD_CACHE_MAX = 32
 
 class Troop:  # Troop class to store troop information and actions
@@ -75,11 +73,9 @@ class Troop:  # Troop class to store troop information and actions
         #     for k, v in SUPPLY_DATABASE.items():
         #         self.supply_stock[k] = float(v)
 
-        #!TEMP >>>>
         self.path = []  # A* 경로
         self.path_index = 0
         self.last_pathfind_time = 0
-        #!TEMP <<<<
 
     def dead(self):
         del self  # Explicitly delete the object
@@ -261,13 +257,12 @@ class Troop:  # Troop class to store troop information and actions
         self, current_time, enemy_list
     ):  # TODO: Implement target assignment logic, indirect fire logic
 
-        #!TEMP 이미 좋은 타겟이 있으면 그대로 유지 >>>>
+        # 이미 좋은 타겟이 있으면 그대로 유지
         if (self.target and self.target.alive and 
             getattr(self.target, 'active', False)):
             distance = self.get_distance(self.target)
             if distance <= self.range_km:
                 return  # 기존 타겟 유지 - 계산 생략!        
-        #!TEMP 이미 좋은 타겟이 있으면 그대로 유지 <<<<
 
         # 밤 시간대: 19:00 ~ 06:00
         is_night = 360 <= current_time % 1440 <= 1080
@@ -281,7 +276,7 @@ class Troop:  # Troop class to store troop information and actions
                 if e.status == UnitStatus.HIDDEN:
                     continue
 
-                #!TEMP 추가: active=False인 적은 타겟 대상에서 제외
+                # active=False인 적은 타겟 대상에서 제외
                 if not getattr(e, 'active', False):
                     continue
 
@@ -363,11 +358,10 @@ class Troop:  # Troop class to store troop information and actions
         if not self.alive:
             return
 
-        #!TEMP 수정: None 체크를 먼저 수행 >>>>
+        # 수정: None 체크를 먼저 수행
         if self.target is None or not self.target.alive:
             self.assign_target(current_time, enemy_list)
             return
-        #!TEMP 수정: None 체크를 먼저 수행 <<<<
 
         if self.target.alive == False or self.target is None:
             self.assign_target(current_time, enemy_list)
@@ -565,7 +559,7 @@ class Troop:  # Troop class to store troop information and actions
         goal_key = f"{goal[0]}_{goal[1]}"
 
         if goal_key not in battle_map.flow_fields:
-            #!CLAUDE 메모리: 캐시가 상한에 도달하면 가장 오래된 항목부터 제거(dict는 삽입 순서 유지).
+            # 메모리: 캐시가 상한에 도달하면 가장 오래된 항목부터 제거(dict는 삽입 순서 유지).
             if len(battle_map.flow_fields) >= FLOW_FIELD_CACHE_MAX:
                 oldest_key = next(iter(battle_map.flow_fields))
                 del battle_map.flow_fields[oldest_key]
@@ -603,8 +597,8 @@ class Troop:  # Troop class to store troop information and actions
 
     def follow_path(self, battle_map: Map, current_time: float):
         """🟢 개선된 경로 따라가기 - 부드러운 곡선 이동"""
-        #!CLAUDE 안정성: 가까운 웨이포인트가 연속되면 재귀 깊이가 깊어져 스택 오버플로/세그폴트 위험.
-        #         동작은 동일하게 유지하면서 재귀를 while 루프로 변환(재귀 호출 → continue).
+        # 안정성: 가까운 웨이포인트가 연속되면 재귀 깊이가 깊어져 스택 오버플로/세그폴트 위험.
+        # 재귀 대신 while 루프 사용(재귀 호출 자리는 continue).
         # if self.path_index >= len(self.path):
         #     return Velocity(0, 0, 0)
         #
@@ -799,7 +793,6 @@ class Troop:  # Troop class to store troop information and actions
     #     # 2. 고급 경로탐색 사용
     #     return self.compute_velocity_advanced(tactical_dest, battle_map, current_time)
 
-    #!TEMP <<<<
 
 
 class TroopList:  # Troop list to manage all troops
@@ -920,7 +913,7 @@ class TroopList:  # Troop list to manage all troops
         # #         elif troop.team == "red":
         # #             troop.assign_target(current_time, self.blue_troops)
 
-        # #!TEMP # active한 적만 필터링 >>>>
+        # # active한 적만 필터링
         # active_blue_troops = [t for t in self.blue_troops if getattr(t, 'active', False) and t.alive]
         # active_red_troops = [t for t in self.red_troops if getattr(t, 'active', False) and t.alive]
         # for troop in self.troops:
@@ -929,7 +922,6 @@ class TroopList:  # Troop list to manage all troops
         #             troop.assign_target(current_time, active_red_troops)  # 변경!
         #         elif troop.team == "red":
         #             troop.assign_target(current_time, active_blue_troops)  # 변경!
-        # #!TEMP # active한 적만 필터링 <<<<
 
     def assign_targets_for_nontarget_units(self, current_time):
         active_blue_troops = self.blue_observed
@@ -1074,7 +1066,6 @@ def terminate(troop_list:TroopList, current_time):
     print(f"[{current_time:.1f}] 전투 종료: 모든 전차와 APC가 파괴됨")
     return True
 
-#!TEMP >>>>
 def update_troop_location_improved(troop_list: TroopList, battle_map, current_time):
     """개선된 부대 이동 업데이트"""
 
@@ -1130,4 +1121,3 @@ def update_troop_location_improved(troop_list: TroopList, battle_map, current_ti
         if not (0 <= troop.coord.x < battle_map.width and 
                 0 <= troop.coord.y < battle_map.height):
             troop.alive = False
-#!TEMP <<<<

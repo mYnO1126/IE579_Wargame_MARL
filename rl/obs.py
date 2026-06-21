@@ -18,20 +18,27 @@ from modules.unit_definitions import UnitType
 ENEMY_K = 5
 ALLY_K = 5
 
-#!CLAUDE 지형 관측: 11x11 패치(363차원, CNN 필요) 대신 8방향 압축 특징으로 교체 → MLP로 충분.
-#         각 방향 = _MOVES 1..8 과 동일 순서. 방향마다 {이동가능거리, 평균 험준함, 고도변화} 3개.
+# 지형 관측: 11x11 패치(363차원, CNN 필요) 대신 8방향 압축 특징 → MLP로 충분.
+# 각 방향 = _MOVES 1..8 과 동일 순서. 방향마다 {이동가능거리, 평균 험준함, 고도변화} 3개.
 _DIR8 = ((0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1))
 _LOOK = 12             # 각 방향으로 직선 탐색할 셀 수
 TERR_FEATS = 8 * 3     # 24
 
-#!CLAUDE 거리 정규화 고정 기준(px, ≈3km). 맵 대각선(dmax) 대신 이 값으로 나눠 크롭↔풀맵 스케일 일관.
-#         방향은 단위벡터(스케일 불변), 거리는 _DREF로 정규화(클립). 풀 시뮬 배포 전이 격차 완화.
+# 거리 정규화 고정 기준(px, ≈3km). 맵 대각선(dmax) 대신 이 값으로 나눠 크롭↔풀맵 스케일 일관.
+# 방향은 단위벡터(스케일 불변), 거리는 _DREF로 정규화(클립). 풀 시뮬 배포 전이 격차 완화.
 _DREF = 300.0
 
-# self(11) + goal(5) + enemies(K*10) + allies(K*10) + terrain(8dir*3=24)
-OBS_DIM = 11 + 5 + ENEMY_K * 10 + ALLY_K * 10 + TERR_FEATS
+# 국지 밀집(crowd) 특징: top-k(=5) 관측은 4v4에선 포화되지 않지만 풀맵(적 267)에선
+# "포위당함"을 놓친다. top-k 밖까지 집계해 국지 열세/방향별 압력을 인지시켜 전이 격차를 줄임.
+# [반경 내 적수, 아군수(자기 포함), 국지 force-ratio, 8섹터 적 분포] = 3 + 8.
+CROWD_FEATS = 11
+_CROWD_R = _DREF        # 국지 반경(px) — 스케일 기준과 동일
+_CROWD_CAP = 12.0       # 카운트 정규화 상한
 
-#!CLAUDE MAPPO 중앙 critic용 전역 상태(팀 단위, 한 step에 하나). 팀 승패를 잘 예측하도록 압축.
+# self(11) + goal(5) + enemies(K*10) + allies(K*10) + terrain(8dir*3=24) + crowd(11)
+OBS_DIM = 11 + 5 + ENEMY_K * 10 + ALLY_K * 10 + TERR_FEATS + CROWD_FEATS
+
+# MAPPO 중앙 critic용 전역 상태(팀 단위, 한 step에 하나). 팀 승패를 잘 예측하도록 압축.
 #  [시간, 학습팀 생존율, 상대 생존율, 학습팀 중심 x·y, 상대 중심 x·y, 학습팀 분산, 상대 분산]
 GLOBAL_DIM = 9
 
@@ -68,6 +75,37 @@ def _dir_dist(dx, dy):
     if d < 1e-6:
         return 0.0, 0.0, 0.0
     return dx / d, dy / d, min(d / _DREF, 1.0)
+
+
+# 국지 밀집 집계: 반경 _CROWD_R(px) 안의 적/아군을 세어 열세·방향별 압력을 요약한다.
+# top-k 관측이 포화돼도(적이 많아도) "몇에게 둘러싸였는지"를 별도로 인지하게 함.
+def _crowd_features(troop, enemies_pool, allies_pool):
+    feat = np.zeros(CROWD_FEATS, dtype=np.float32)
+    sectors = np.zeros(8, dtype=np.float32)
+    n_en = 0
+    for e in enemies_pool:
+        if not e.alive or e is troop:
+            continue
+        dx, dy = e.coord.x - troop.coord.x, e.coord.y - troop.coord.y
+        if math.hypot(dx, dy) > _CROWD_R:
+            continue
+        n_en += 1
+        s = int(((math.atan2(dy, dx) + math.pi) / (2 * math.pi)) * 8) % 8   # 8섹터 분류
+        sectors[s] += 1.0
+    n_al = 0
+    for a in allies_pool:
+        if not a.alive or a is troop:
+            continue
+        dx, dy = a.coord.x - troop.coord.x, a.coord.y - troop.coord.y
+        if math.hypot(dx, dy) <= _CROWD_R:
+            n_al += 1
+    n_al_self = n_al + 1                                   # 자기 자신을 아군 1로 포함
+    feat[0] = min(n_en / _CROWD_CAP, 1.0)                  # 국지 적 수
+    feat[1] = min(n_al_self / _CROWD_CAP, 1.0)             # 국지 아군 수(자기 포함)
+    feat[2] = n_al_self / (n_al_self + n_en)              # 국지 force-ratio (1=아군우세, ↓=포위)
+    if n_en > 0:
+        feat[3:11] = sectors / n_en                        # 섹터별 적 분포(합=1)
+    return feat
 
 
 def build_observation(troop, troop_list, cm):
@@ -159,6 +197,9 @@ def build_observation(troop, troop_list, cm):
         terr[off + 1] = (cost_sum / reach / 20.0) if reach > 0 else 1.0  # 평균 험준함(0~1)
         terr[off + 2] = float(np.clip((end_z - z0) / 50.0, -1.0, 1.0))   # 고도 변화(+=상승)
     parts.append(terr)
+
+    # 국지 밀집(crowd) 특징 — top-k 밖의 포위/열세 인지 (관측 풀은 enemy/ally 와 동일)
+    parts.append(_crowd_features(troop, enemies_pool, allies_pool))
 
     return np.concatenate(parts).astype(np.float32), enemy_order
 

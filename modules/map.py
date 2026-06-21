@@ -15,7 +15,7 @@ TIME_STEP = 1.0
 # MAP_WIDTH = 30  # 맵의 너비
 # MAP_HEIGHT = 30  # 맵의 높이
 
-#!CLAUDE 성능: 8방향 이웃 (dx, dy, base_dist). 매 호출마다 리스트를 새로 만들지 않도록 모듈 상수로 분리.
+# 성능: 8방향 이웃 (dx, dy, base_dist). 매 호출마다 리스트를 새로 만들지 않도록 모듈 상수로 분리.
 _NEIGHBOR_DIRS = (
     (-1, -1, 1.15), (-1, 0, 1.0), (-1, 1, 1.15),
     (0, -1, 1.0),                  (0, 1, 1.0),
@@ -107,12 +107,10 @@ class Map:  # Map class to store map information
         self.grid[self.wood_mask.astype(bool)]   *= self.terrain_cost[8]
         self.grid[self.stream_mask.astype(bool)] *= self.terrain_cost[9]
         
-        #!TEMP 비용 맵과 플로우 필드 생성 >>>>
+        # 비용 맵과 플로우 필드 생성
         self.cost_map = self.build_cost_map()
         self.flow_fields = {}  # 목표별 플로우 필드 캐시
-        #!TEMP 비용 맵과 플로우 필드 생성 <<<<
 
-    #!TEMP >>>>
     def build_cost_map(self, slope_weight=0.1, min_cost=0.1):
         """각 셀의 이동 비용 계산"""
         h, w = self.slope_arr.shape
@@ -141,7 +139,7 @@ class Map:  # Map class to store map information
 
     def get_neighbors(self, x: int, y: int) -> List[Tuple[int, int, float]]:
         """8방향 이웃 셀과 이동 비용 반환"""
-        #!CLAUDE 성능: is_passable() 호출과 매 호출 시 directions 리스트 생성을 제거(인라인화). 반환값 동일.
+        # 통행 판정과 방향 목록을 인라인 전개해 호출당 list 생성을 피한다.
         # neighbors = []
         # directions = [
         #     (-1, -1, 1.15), (-1, 0, 1.0), (-1, 1, 1.15),
@@ -166,7 +164,6 @@ class Map:  # Map class to store map information
                 if c != np.inf:
                     neighbors.append((nx, ny, c * base_dist))
         return neighbors
-    #!TEMP <<<<
     
     # def is_impassable(self, x, y) -> bool:
     #     xi, yi = int(x), int(y)
@@ -247,8 +244,8 @@ class Map:  # Map class to store map information
         if n == 0:
             return True  # Same cell
 
-        #!CLAUDE 성능(M2): per-step 파이썬 루프를 numpy 벡터화. 동일한 정수 샘플점·판정식 → 결과 동일.
-        #         (양 끝점이 맵 안이면 선분 내부 점도 맵 안이므로 원래의 per-step bounds 체크는 불필요.)
+        # 선분 가시성 판정을 numpy로 벡터화(정수 샘플점 단위).
+        # (양 끝점이 맵 안이면 선분 내부 점도 맵 안이므로 per-step bounds 체크는 불필요.)
         # for step in range(1, n):
         #     t = step / n
         #     xi = int(round(x0 + (x1 - x0) * t))
@@ -274,12 +271,10 @@ class Map:  # Map class to store map information
         return True
 
         
-#!TEMP >>>>
 def astar_pathfinding(battle_map: Map, start: Tuple[int, int], goal: Tuple[int, int]) -> List[Tuple[int, int]]:
     """A* 알고리즘으로 최적 경로 탐색"""
-    #!CLAUDE 성능: get_neighbors() 호출(노드당 list/tuple 생성, 18M+ 호출)을 인라인 전개로 대체.
-    #         탐색 순서·비용·휴리스틱·heap tie-break이 모두 동일하므로 반환 경로는 동일.
-    #         또한 한 번도 읽히지 않던 f_score dict 제거(불필요한 메모리/연산).
+    # 이웃 확장을 인라인 전개해 노드당 list/tuple 생성을 피한다(18M+ 호출 경로).
+    # 탐색 순서·비용·휴리스틱·heap tie-break은 get_neighbors()와 동일.
     # def heuristic(a, b):
     #     return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
     #
@@ -322,9 +317,9 @@ def astar_pathfinding(battle_map: Map, start: Tuple[int, int], goal: Tuple[int, 
 
     came_from = {}
     g_score = {start: 0}
-    #!CLAUDE 성능: stale heap 항목 스킵용. 원본은 같은 노드를 여러 번 pop할 때마다 이웃을 재확장했는데,
-    #         재확장은 항상 best g(g_score 값)를 사용하므로 no-op(이웃 갱신 없음)이다. 이를 건너뛴다.
-    #         best_f[node]보다 큰 f로 pop된 항목만 스킵 → heap tuple/타이브레이크 불변, 반환 경로 동일.
+    # stale heap 항목 스킵용. 같은 노드를 best_f[node]보다 큰 f로 다시 pop하면 건너뛴다:
+    # 재확장은 항상 best g(g_score)를 쓰므로 no-op(이웃 갱신 없음)이다.
+    # heap tuple/타이브레이크는 불변이라 반환 경로는 그대로다.
     best_f = {start: 0}
 
     while open_set:
@@ -418,7 +413,7 @@ def build_flow_field(battle_map: Map, goal: Tuple[int, int]) -> np.ndarray:
     goal_x, goal_y = goal
 
     # Dijkstra 알고리즘으로 최단 거리 계산
-    #!CLAUDE 성능: get_neighbors()의 셀당 list/tuple 생성을 인라인 전개로 대체. distance_field 결과는 동일.
+    # 이웃 확장을 인라인 전개해 셀당 list/tuple 생성을 피한다(distance_field 동일).
     # pq = []
     # distance_field[goal_y, goal_x] = 0
     # heappush(pq, (0, goal_x, goal_y))
@@ -458,7 +453,7 @@ def build_flow_field(battle_map: Map, goal: Tuple[int, int]) -> np.ndarray:
                     heappush(pq, (new_dist, nx, ny))
 
     # 🟢 개선된 방향 계산 - 더 부드러운 방향 벡터
-    #!CLAUDE 성능: 셀별 이중 루프(h*w * 8이웃)를 numpy 벡터화로 대체. 누적/연산 순서를 원본과 동일하게 맞춰 결과 동일.
+    # 셀별 이중 루프(h*w * 8이웃)를 numpy로 벡터화(누적/연산 순서 유지).
     # for y in range(h):
     #     for x in range(w):
     #         if distance_field[y, x] == np.inf:
@@ -763,4 +758,3 @@ class TacticalManager:
             return best_pos[0]
         
         return target.coord
-#!TEMP <<<<

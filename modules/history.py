@@ -1,9 +1,9 @@
 # history.py
 
 import pandas as pd
-#!CLAUDE segfault 방지: 대화형 TkAgg 백엔드는 장시간 루프에서 figure를 반복 생성/저장할 때
-#         간헐적 크래시(segfault)를 유발한다. 시뮬레이션은 PNG 저장 전용이므로 비대화형 Agg로 고정.
-#         (pyplot import 이전에 backend를 지정해야 적용됨)
+# segfault 방지: 대화형 TkAgg 백엔드는 장시간 루프에서 figure를 반복 생성/저장할 때
+# 간헐적 크래시(segfault)를 유발한다. 시뮬레이션은 PNG 저장 전용이므로 비대화형 Agg로 고정.
+# (pyplot import 이전에 backend를 지정해야 적용됨)
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -17,7 +17,7 @@ import numpy as np
 # from .map import MAP_WIDTH, MAP_HEIGHT
 
 
-#!CLAUDE 전술 프레임 제목용: 시뮬레이션 분 → 시계 시각 문자열 (시작 13:55).
+# 전술 프레임 제목용: 시뮬레이션 분 → 시계 시각 문자열 (시작 13:55).
 def _sim_clock_str(current_time):
     total = int(13 * 60 + 55 + current_time)
     day = total // 1440 + 1
@@ -185,11 +185,11 @@ class History:  # Store history of troop actions and troop status
         # 🟢 4. 부대 위치 그리기 (맨 위에 표시)
         self._draw_troop_markers(ax, troop_list)
 
-        #!CLAUDE 실제 이동 방향(velocity) 화살표. 기본 OFF(기존 프레임 불변), RL 렌더에서만 ON.
+        # 실제 이동 방향(velocity) 화살표. 기본 OFF(기존 프레임 불변), RL 렌더에서만 ON.
         if show_move_arrows:
             self._draw_move_arrows(ax, troop_list)
 
-        #!CLAUDE 버그 수정: TroopList는 iterable이 아님 → .troops 를 순회해야 함 (--save_frames 사용 시 TypeError로 즉시 크래시 방지).
+        # TroopList는 iterable이 아니므로 .troops 를 순회한다.
         # for troop in troop_list:
         for troop in troop_list.troops:
             if not troop.alive:
@@ -245,14 +245,14 @@ class History:  # Store history of troop actions and troop status
                 plt.Line2D([0], [0], color='cyan', linewidth=1,
                           linestyle='--', alpha=0.6, label='Path')
             )
-        #!CLAUDE 이동 방향 화살표 범례
+        # 이동 방향 화살표 범례
         if show_move_arrows:
             legend_elements.append(
                 plt.Line2D([0], [0], color='black', marker='>', linestyle='-',
                           linewidth=1, label='Move dir')
             )
 
-        #!CLAUDE 범례는 옵션(기본 OFF). show_legend=True 일 때만 표시.
+        # 범례는 옵션(기본 OFF). show_legend=True 일 때만 표시.
         if show_legend:
             ax.legend(handles=legend_elements, loc='lower right', bbox_to_anchor=(1.2, 0.0))
         # ----지형 시각화 추가 ----
@@ -261,15 +261,20 @@ class History:  # Store history of troop actions and troop status
         plt.savefig(f"{save_dir}/frame_{int(current_time):05d}.png")
         plt.close()
 
-    def _draw_attack_lines(self, ax, troop_list: TroopList):
-        """공격선 그리기"""
+    def _draw_attack_lines(self, ax, troop_list: TroopList, light=False):
+        """공격선(사격 방향) 그리기. light=True 면 연한색(풀 시나리오 tactical 용)."""
+        # light: 풀 시나리오(많은 유닛)에서 진한 선이 화면을 덮어 가독성↓ → 연한 톤으로.
+        # RL board(기본 light=False)는 진한 색 유지.
         for troop in troop_list.troops:
             if not troop.alive or not troop.active:
                 continue
-            
+
             if troop.target and troop.target.alive:
-                # 공격선 색상 결정
-                line_color = 'darkred' if troop.team == 'red' else 'darkblue'
+                # 공격선 색상 결정 (light=연한 톤)
+                if light:
+                    line_color = '#e3a39e' if troop.team == 'red' else '#9eb6e3'
+                else:
+                    line_color = 'darkred' if troop.team == 'red' else 'darkblue'
                 
                 # 무기 유형별 선 스타일
                 if UnitType.is_indirect_fire(troop.type):
@@ -353,31 +358,34 @@ class History:  # Store history of troop actions and troop status
                                   alpha=alpha, linewidth=1)
                 ax.add_patch(circle)
 
-    def _draw_movement_paths(self, ax, troop_list: TroopList):
-        """이동 경로 그리기"""
+    def _draw_movement_paths(self, ax, troop_list: TroopList, light=False):
+        """이동 경로/목표선 그리기. light=True 면 연한 톤(풀 시나리오 클러터 방지)."""
+        # light 옵션: 풀 시나리오는 goal선이 많아 진하면 화면을 덮음 → 연하게.
+        path_c, path_a = ('#a9d6d6', 0.4) if light else ('cyan', 0.6)
+        goal_c, goal_a = ('#bcdfbc', 0.35) if light else ('lime', 0.5)
         for troop in troop_list.troops:
             if not troop.alive or not troop.can_move:
                 continue
-            
+
             # 경로가 있는 경우
             if hasattr(troop, 'path') and troop.path:
                 path_x = [troop.coord.x] + [p[0] for p in troop.path]
                 path_y = [troop.coord.y] + [p[1] for p in troop.path]
-                
-                ax.plot(path_x, path_y, 
-                       color='cyan', linestyle='--', 
-                       linewidth=1, alpha=0.6)
-            
+
+                ax.plot(path_x, path_y,
+                       color=path_c, linestyle='--',
+                       linewidth=1, alpha=path_a)
+
             # 고정 목적지가 있는 경우
             elif troop.fixed_dest:
                 ax.plot([troop.coord.x, troop.fixed_dest.x],
                        [troop.coord.y, troop.fixed_dest.y],
-                       color='lime', linestyle='-.', 
-                       linewidth=1, alpha=0.5)
+                       color=goal_c, linestyle='-.',
+                       linewidth=1, alpha=goal_a)
 
     def _draw_troop_markers(self, ax, troop_list: TroopList, size_scale=1.0):
         """부대 마커 그리기"""
-        #!CLAUDE size_scale 인자 추가: 전술 개요(넓은 맵)에서 마커를 키워 가독성↑. 기본 1.0이면 기존 동작 동일.
+        # size_scale: 전술 개요(넓은 맵)에서 마커를 키워 가독성↑(기본 1.0).
         for troop in troop_list.troops:
             if not troop.alive:
                 continue
@@ -412,9 +420,13 @@ class History:  # Store history of troop actions and troop status
                       s=size * size_scale, alpha=alpha,
                       edgecolors='black', linewidths=0.5)
 
-    #!CLAUDE 실제 이동 방향 화살표(velocity 기반). 고정 길이로 그려 속도와 무관하게 방향만 표시.
-    def _draw_move_arrows(self, ax, troop_list: TroopList):
-        """각 유닛이 실제로 움직이는 방향(velocity)을 검은 화살표로 표시."""
+    # 실제 이동 방향 화살표(velocity 기반). 고정 길이로 그려 속도와 무관하게 방향만 표시.
+    def _draw_move_arrows(self, ax, troop_list: TroopList, light=False):
+        """각 유닛이 실제로 움직이는 방향(velocity)을 화살표로 표시. light=True 면 연한 회색."""
+        # light 옵션: 풀 시나리오용 연한 톤. RL board(기본)는 진한 검정 유지.
+        fc = "#8a8a8a" if light else "black"
+        alpha = 0.7 if light else 0.95
+        lw = 1.2 if light else 1.6
         for troop in troop_list.troops:
             if not troop.alive or not getattr(troop, "active", False):
                 continue
@@ -425,15 +437,15 @@ class History:  # Store history of troop actions and troop status
             ux, uy = vx / speed, vy / speed
             L = 10.0  # 고정 화살 길이(px)
             ax.arrow(troop.coord.x, troop.coord.y, ux * L, uy * L,
-                     head_width=4.0, head_length=4.5, fc="black", ec="black",
-                     alpha=0.95, linewidth=1.6, zorder=6, length_includes_head=True)
+                     head_width=4.0, head_length=4.5, fc=fc, ec=fc,
+                     alpha=alpha, linewidth=lw, zorder=6, length_includes_head=True)
 
     def create_tactical_overview(self, Map, troop_list: TroopList, current_time, save_dir="frames",
                                  show_legend=False):
         """🟢 전술 개요 시각화 (별도 파일)"""
-        #!CLAUDE 가독성 개선: 지형 배경 + 팀/병종 범례 + 시계 제목, 교전 히트맵 정비.
-        #         + 프레임 안정화: 축 위치를 고정(add_axes)하고 컬러바 자리를 항상 예약해
-        #           프레임마다 레이아웃/크기가 흔들리거나 축 라벨이 잘리던 문제 제거.
+        # 지형 배경 + 팀/병종 범례 + 시계 제목 + 교전 히트맵.
+        # 프레임 안정화: 축 위치를 고정(add_axes)하고 컬러바 자리를 항상 예약해
+        # 프레임마다 레이아웃/크기가 흔들리거나 축 라벨이 잘리지 않게 한다.
         # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
         #
         # # 좌측: 전체 전술 상황
@@ -468,8 +480,8 @@ class History:  # Store history of troop actions and troop status
 
     def _create_overview_plot(self, ax, Map, troop_list: TroopList, current_time, show_legend=False):
         """전체 전술 상황 플롯"""
-        #!CLAUDE 가독성 개선: 단조로운 DEM 대신 지형 마스크(도로/물/숲/개울)를 함께 표시하고
-        #         부대 마커를 키우며 팀·병종·지형 범례를 추가.
+        # 단조로운 DEM 대신 지형 마스크(도로/물/숲/개울)를 함께 표시하고
+        # 부대 마커를 키우며 팀·병종·지형 범례를 추가.
         # # 간단한 지형 표시
         # ax.imshow(Map.dem_arr, cmap="terrain", origin="upper", alpha=0.3)
         #
@@ -490,16 +502,16 @@ class History:  # Store history of troop actions and troop status
         ax.imshow(binarize(Map.lake_mask),   cmap=ListedColormap(["none", "#2f6fb0"]), origin="upper", alpha=0.55)
         ax.imshow(binarize(Map.stream_mask), cmap=ListedColormap(["none", "#5aa0e0"]), origin="upper", alpha=0.55)
 
-        #!CLAUDE 전술 요소 추가: 공격선(사격 방향) + goal선(이동 목표)을 마커 뒤에 깔고,
-        #         이동 방향 화살표는 마커 위에. (이전엔 마커만 그려 방향 정보가 안 보였음)
-        self._draw_attack_lines(ax, troop_list)
-        self._draw_movement_paths(ax, troop_list)
+        # 공격선(사격 방향) + goal선(이동 목표)을 마커 뒤에 깔고, 이동 방향 화살표는 마커 위에.
+        # 풀 시나리오는 유닛이 많아 light=True(연한색)로 표시.
+        self._draw_attack_lines(ax, troop_list, light=True)
+        self._draw_movement_paths(ax, troop_list, light=True)
 
         # 부대 마커 (크게)
         self._draw_troop_markers(ax, troop_list, size_scale=4.0)
 
         # 실제 이동 방향 화살표 (마커 위)
-        self._draw_move_arrows(ax, troop_list)
+        self._draw_move_arrows(ax, troop_list, light=True)
 
         ax.set_title("Tactical Situation", fontsize=13, fontweight="bold", pad=8)
         ax.set_xlabel("X (px · 10 m)", fontsize=10)
@@ -508,7 +520,7 @@ class History:  # Store history of troop actions and troop status
         ax.set_ylim(Map.height, 0)
         ax.set_aspect("equal")
 
-        #!CLAUDE 범례는 옵션(기본 OFF) — show_legend=True 일 때만 두 범례를 그림
+        # 범례는 옵션(기본 OFF) — show_legend=True 일 때만 두 범례를 그림
         if not show_legend:
             return
 
@@ -538,11 +550,10 @@ class History:  # Store history of troop actions and troop status
 
     def _create_engagement_heatmap(self, ax, Map, troop_list: TroopList, current_time, cax=None):
         """교전 강도 히트맵"""
-        # 맵 실제 크기 (하드코딩 800x600 대신 사용)
         W, H = Map.width, Map.height
 
-        #!CLAUDE 가독성 개선: 옅은 지형 배경 위에 교전 밀도를 올리고(빈 셀은 투명),
-        #         좌측 상황도와 동일한 좌표 방향(y 아래로 증가)·스타일·시계 제목으로 통일.
+        # 옅은 지형 배경 위에 교전 밀도를 올리고(빈 셀은 투명),
+        # 좌측 상황도와 동일한 좌표 방향(y 아래로 증가)·스타일·시계 제목으로 통일.
         # 옅은 지형 배경으로 공간 맥락 제공
         ax.imshow(Map.dem_arr, cmap="Greys", origin="upper", alpha=0.18)
 
@@ -564,16 +575,11 @@ class History:  # Store history of troop actions and troop status
             engagement_data = np.array(engagement_data)
 
             # 2D 히스토그램으로 교전 밀도 계산
-            #!CLAUDE 하드코딩 800x600 → 맵 실제 크기(W,H)로 교체
-            # bins=50, range=[[0, 800], [0, 600]]
             hist, xedges, yedges = np.histogram2d(
                 engagement_data[:, 0], engagement_data[:, 1],
                 bins=35, range=[[0, W], [0, H]]
             )
 
-            #!CLAUDE 하드코딩 800x600 → 맵 실제 크기(W,H)로 교체 + 좌표 방향/컬러맵 정리
-            # im = ax.imshow(hist.T, origin='lower', cmap='Reds', alpha=0.7,
-            #               extent=[0, 800, 0, 600])
             # 낮은 값(빈 셀)은 set_under로 투명 처리. np.ma 마스킹 대신 이 방식을 쓰는 이유:
             # 가우시안 보간 시 마스크 경계가 흐려져 히트가 거의 안 보이게 되는 문제를 피하기 위함.
             heat_cmap = plt.get_cmap("inferno").copy()
@@ -615,8 +621,7 @@ class History:  # Store history of troop actions and troop status
             lambda row: sum(status == "alive" for status in row), axis=1
         )
 
-        #!CLAUDE 가독성: 저장 그래프 스타일 개선(팀 색상/영역 채움/최종 병력 주석/깔끔한 격자·여백).
-        #         데이터 계산 로직은 위와 동일하며 그래프 모양만 변경.
+        # 저장 그래프 스타일: 팀 색상/영역 채움/최종 병력 주석/깔끔한 격자·여백.
         # plt.figure(figsize=(10, 5))
         # plt.plot(time_col, blue_alive, label="BLUE Troops Alive")
         # plt.plot(time_col, red_alive, label="RED Troops Alive")
@@ -658,9 +663,9 @@ class History:  # Store history of troop actions and troop status
                             color=color, fontsize=11, fontweight="bold",
                             va="center")
 
-        #!CLAUDE 야간(19:00~06:00) 구간 음영. 이동 로직(calculate_movement_distance)의 daynight 정의와 동일한
-        #         시계 기준 사용: hour = (13*60+55 + t)//60 % 24, 야간 = hour < 6 or hour >= 19.
-        #         (참고: 전투 로직의 is_night = 360 <= t%1440 <= 1080 과는 정의가 다름)
+        # 야간(19:00~06:00) 구간 음영. 이동 로직(calculate_movement_distance)의 daynight 정의와 동일한
+        # 시계 기준 사용: hour = (13*60+55 + t)//60 % 24, 야간 = hour < 6 or hour >= 19.
+        # (참고: 전투 로직의 is_night = 360 <= t%1440 <= 1080 과는 정의가 다름)
         START_MIN = 13 * 60 + 55  # 시뮬레이션 시작 시각 13:55 (분)
 
         def _is_night(t):

@@ -205,6 +205,7 @@ def main():
     ap.add_argument("--seeds", type=int, default=1)
     ap.add_argument("--max_time", type=float, default=2880.0,
                     help="기본 2880분 = 원래 시뮬 끝까지(또는 자연종료). 빠른 스모크용으로만 줄여 쓸 것")
+    ap.add_argument("--out", default=None, help="결과(seed별 raw + 팀별 metric)를 JSON으로 저장할 경로")
     args = ap.parse_args()
     if not args.blue and not args.red:
         ap.error("최소 한 쪽(--blue/--red) 체크포인트가 필요합니다.")
@@ -221,17 +222,30 @@ def main():
         print(f"  seed {s}: base(blue={base_runs[-1]['blue']},red={base_runs[-1]['red']}) | "
               f"cfg(blue={cfg_runs[-1]['blue']},red={cfg_runs[-1]['red']})")
 
+    summary = {}                                                    # JSON 저장용
     for tm in ("blue", "red"):
         tag = "정책" if tm in pol_sides else "규칙(고정)"
         bm = [_team_metrics(r, tm) for r in base_runs]
         cm = [_team_metrics(r, tm) for r in cfg_runs]
         print(f"\n[{tm} — {tag}]   {'metric':<8}{'rule(mean±std)':>17}{'config(mean±std)':>18}{'Δ paired':>14}")
         print("-" * 60)
+        summary[tm] = {"tag": tag}
         for k in bm[0]:
             rv = np.array([m[k] for m in bm]); pv = np.array([m[k] for m in cm]); dv = pv - rv
             print(f"{'':<11}{k:<8}{rv.mean():>10.2f}±{rv.std():<6.2f}{pv.mean():>9.2f}±{pv.std():<6.2f}"
                   f"{dv.mean():>+8.2f}±{dv.std():.2f}")
+            summary[tm][k] = {"rule_mean": float(rv.mean()), "rule_std": float(rv.std()),
+                              "cfg_mean": float(pv.mean()), "cfg_std": float(pv.std()),
+                              "delta_mean": float(dv.mean()), "delta_std": float(dv.std())}
     print("\n해석: 정책팀의 LER↑/생존율↑/적손실↑ 이면 규칙 대비 개선. (LER=적손실/아군손실=교환비)")
+
+    if args.out:
+        import json
+        payload = {"policy_sides": pol_sides, "seeds": args.seeds, "max_time": args.max_time,
+                   "base_runs": base_runs, "cfg_runs": cfg_runs, "summary": summary}
+        with open(args.out, "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"[saved] {args.out}")
 
 
 if __name__ == "__main__":
