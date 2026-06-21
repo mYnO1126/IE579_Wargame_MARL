@@ -6,3 +6,9 @@ terrain/load_file_test.ipynb
 rl/viz/*
 rl/policies/*
 __pycache__/
+
+# dev / submission-private notes (kept local, not in the deliverable repo)
+CLAUDE.md
+NOTES.txt
+PPT_SLIDES_DRAFT.txt
+PPT_REVIEW_NOTES.txt
